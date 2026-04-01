@@ -8,44 +8,44 @@ A bilingual client portal for digital marketing content approval, allowing clien
 3. **Transparent** - Clear visibility into content calendar, performance metrics, and request status
 
 **Complexity Level**: Light Application (multiple features with basic state)
-This portal manages multiple interconnected features (calendar, approvals, performance, requests) with user authentication and persistent state across tabs, making it more than a single-purpose tool but not requiring complex multi-view architecture.
+This portal manages multiple interconnected features (calendar, approvals, performance, requests) with user authentication via Supabase Auth, persistent state in PostgreSQL database, and cloud file storage. It includes real-time data synchronization and Row Level Security policies, making it more than a single-purpose tool but not requiring complex multi-view architecture.
 
 ## Essential Features
 
 ### Client Authentication
-- **Functionality**: Email and password login with session persistence
-- **Purpose**: Secure client access to their content and data
+- **Functionality**: Email and password login with session persistence via Supabase Auth
+- **Purpose**: Secure client access to their content and data with proper authentication
 - **Trigger**: User visits portal and enters credentials
-- **Progression**: Landing page → Enter email/password → Validate credentials → Redirect to dashboard
-- **Success criteria**: Successful login persists across sessions, invalid credentials show error message
+- **Progression**: Landing page → Enter email/password → Supabase authentication → Fetch user profile → Redirect to dashboard
+- **Success criteria**: Successful login persists across sessions via Supabase, invalid credentials show error message, automatic profile creation on signup
 
 ### Content Calendar View
-- **Functionality**: Display upcoming scheduled social media posts in card grid format
+- **Functionality**: Display upcoming scheduled social media posts in card grid format from Supabase database
 - **Purpose**: Give clients visibility into their content pipeline
 - **Trigger**: User clicks "Content Calendar" tab
-- **Progression**: Tab click → Load scheduled posts → Display cards with date/platform/preview
-- **Success criteria**: Posts appear chronologically, platform icons visible, preview images load correctly
+- **Progression**: Tab click → Query Supabase for scheduled posts → Display cards with date/platform/preview
+- **Success criteria**: Posts appear chronologically, platform icons visible, preview images load correctly from Supabase Storage
 
 ### Content Approval Workflow
-- **Functionality**: Review and approve/reject post designs with optional feedback
+- **Functionality**: Review and approve/reject post designs with optional feedback, synced to Supabase
 - **Purpose**: Enable client feedback loop for content refinement
 - **Trigger**: User clicks "Approvals" tab
-- **Progression**: Tab click → View pending posts → Click approve/request changes → Add comment (optional) → Submit decision
-- **Success criteria**: Approval state persists, comments saved, visual confirmation of action
+- **Progression**: Tab click → Query approval posts from Supabase → Click approve/request changes → Add comment (optional) → Update status in database → Submit decision
+- **Success criteria**: Approval state persists in Supabase, comments saved, visual confirmation of action, real-time updates
 
 ### Performance Metrics Dashboard
-- **Functionality**: Display engagement metrics with visual charts
+- **Functionality**: Display engagement metrics with visual charts from Supabase database
 - **Purpose**: Demonstrate ROI and content effectiveness to clients
 - **Trigger**: User clicks "Performance" tab
-- **Progression**: Tab click → Load historical post data → Render charts showing reach/likes/engagement
-- **Success criteria**: Charts render clearly, metrics update based on data, responsive to different screen sizes
+- **Progression**: Tab click → Load historical post data from Supabase → Render charts showing reach/likes/engagement
+- **Success criteria**: Charts render clearly, metrics update based on database data, responsive to different screen sizes
 
 ### Content Request Submission
-- **Functionality**: Form for submitting new content ideas with status tracking
+- **Functionality**: Form for submitting new content ideas with file uploads to Supabase Storage and status tracking
 - **Purpose**: Streamline client communication for new projects
 - **Trigger**: User clicks "Requests" tab
-- **Progression**: Tab click → Fill form (title/description/type) → Submit → View in status tracker
-- **Success criteria**: Form validates, submission appears in tracker, status updates visible
+- **Progression**: Tab click → Fill form (title/description/type) → Upload reference images (compressed if >5MB) → Submit to Supabase → Images uploaded to Storage bucket → View in status tracker
+- **Success criteria**: Form validates, submission appears in database, images stored in Supabase Storage with public URLs, status updates visible, automatic image compression for large files
 
 ## Edge Case Handling
 - **Empty States**: Show helpful messages when no content exists (e.g., "No pending approvals" with illustration)

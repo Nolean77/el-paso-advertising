@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { LanguageToggle } from '@/components/LanguageToggle'
 import { translations, type Language } from '@/lib/translations'
+import { supabase } from '@/lib/supabase'
 import type { User } from '@/lib/types'
 
 interface LoginPageProps {
@@ -27,18 +28,36 @@ export function LoginPage({ onLogin, language, onLanguageToggle }: LoginPageProp
     setError('')
     setIsLoading(true)
 
-    await new Promise(resolve => setTimeout(resolve, 800))
-
-    if (email && password === 'demo123') {
-      onLogin({
+    try {
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
         email,
-        name: email.split('@')[0],
+        password,
       })
-    } else {
+
+      if (authError) {
+        setError(t.error)
+        setIsLoading(false)
+        return
+      }
+
+      if (data.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('name')
+          .eq('id', data.user.id)
+          .single()
+
+        onLogin({
+          id: data.user.id,
+          email: data.user.email!,
+          name: profile?.name || data.user.email?.split('@')[0] || 'User',
+        })
+      }
+    } catch (err) {
       setError(t.error)
+    } finally {
+      setIsLoading(false)
     }
-    
-    setIsLoading(false)
   }
 
   return (
@@ -100,9 +119,6 @@ export function LoginPage({ onLogin, language, onLanguageToggle }: LoginPageProp
               {isLoading ? '...' : t.submit}
             </Button>
           </form>
-          <p className="text-xs text-center text-muted-foreground mt-6">
-            {language === 'en' ? 'Demo password: demo123' : 'Contraseña demo: demo123'}
-          </p>
         </CardContent>
       </Card>
     </div>

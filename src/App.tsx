@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { useKV } from '@github/spark/hooks'
 import { SignOut, CalendarBlank, CheckSquare, ChartBar, Article } from '@phosphor-icons/react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -9,17 +10,82 @@ import { ContentCalendar } from '@/components/ContentCalendar'
 import { Approvals } from '@/components/Approvals'
 import { Performance } from '@/components/Performance'
 import { Requests } from '@/components/Requests'
+import { supabase } from '@/lib/supabase'
 import type { Language } from '@/lib/translations'
 import { translations } from '@/lib/translations'
 import type { User, ScheduledPost, ApprovalPost, PerformanceMetric, ContentRequest } from '@/lib/types'
 
 function App() {
-  const [user, setUser] = useKV<User | null>('user', null)
+  const [user, setUser] = useState<User | null>(null)
   const [language, setLanguage] = useKV<Language>('language', 'en')
-  const [scheduledPosts, setScheduledPosts] = useKV<ScheduledPost[]>('scheduledPosts', [])
-  const [approvalPosts, setApprovalPosts] = useKV<ApprovalPost[]>('approvalPosts', [])
-  const [performanceMetrics, setPerformanceMetrics] = useKV<PerformanceMetric[]>('performanceMetrics', [])
-  const [contentRequests, setContentRequests] = useKV<ContentRequest[]>('contentRequests', [])
+  const [scheduledPosts, setScheduledPosts] = useState<ScheduledPost[]>([])
+  const [approvalPosts, setApprovalPosts] = useState<ApprovalPost[]>([])
+  const [performanceMetrics, setPerformanceMetrics] = useState<PerformanceMetric[]>([])
+  const [contentRequests, setContentRequests] = useState<ContentRequest[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        supabase
+          .from('profiles')
+          .select('name')
+          .eq('id', session.user.id)
+          .single()
+          .then(({ data: profile }) => {
+            setUser({
+              id: session.user.id,
+              email: session.user.email!,
+              name: profile?.name || session.user.email?.split('@')[0] || 'User',
+            })
+          })
+      }
+      setIsLoading(false)
+    })
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        supabase
+          .from('profiles')
+          .select('name')
+          .eq('id', session.user.id)
+          .single()
+          .then(({ data: profile }) => {
+            setUser({
+              id: session.user.id,
+              email: session.user.email!,
+              name: profile?.name || session.user.email?.split('@')[0] || 'User',
+            })
+          })
+      } else {
+        setUser(null)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    if (!user) return
+
+    const loadData = async () => {
+      const [scheduledRes, approvalsRes, metricsRes, requestsRes] = await Promise.all([
+        supabase.from('scheduled_posts').select('*').eq('user_id', user.id).order('date', { ascending: true }),
+        supabase.from('approval_posts').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+        supabase.from('performance_metrics').select('*').eq('user_id', user.id).order('date', { ascending: false }),
+        supabase.from('content_requests').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+      ])
+
+      if (scheduledRes.data) setScheduledPosts(scheduledRes.data as ScheduledPost[])
+      if (approvalsRes.data) setApprovalPosts(approvalsRes.data as ApprovalPost[])
+      if (metricsRes.data) setPerformanceMetrics(metricsRes.data as PerformanceMetric[])
+      if (requestsRes.data) setContentRequests(requestsRes.data as ContentRequest[])
+    }
+
+    loadData()
+  }, [user])
 
   const currentLanguage = language || 'en'
   const t = translations[currentLanguage].nav
@@ -28,7 +94,8 @@ function App() {
     setUser(loggedInUser)
   }
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
     setUser(null)
   }
 
@@ -36,24 +103,53 @@ function App() {
     setLanguage((current) => (current || 'en') === 'en' ? 'es' : 'en')
   }
 
-  const handleUpdatePost = (postId: string, status: ApprovalPost['status'], feedback?: string) => {
-    setApprovalPosts((currentPosts) =>
-      (currentPosts || []).map((post) =>
-        post.id === postId
-          ? { ...post, status, feedback: feedback || post.feedback }
-          : post
+  const handleUpdatePost = async (postId: string, status: ApprovalPost['status'], feedback?: string) => {
+    if (!user) return
+
+    const { error } = await supabase
+      .from('approval_posts')
+      .update({ status, feedback: feedback || null })
+      .eq('id', postId)
+      .eq('user_id', user.id)
+
+    if (!error) {
+      setApprovalPosts((currentPosts) =>
+        currentPosts.map((post) =>
+          post.id === postId
+            ? { ...post, status, feedback: feedback || post.feedback }
+            : post
+        )
       )
-    )
+    }
   }
 
-  const handleSubmitRequest = (request: Omit<ContentRequest, 'id' | 'createdAt' | 'status'>) => {
-    const newRequest: ContentRequest = {
+  const handleSubmitRequest = async (request: Omit<ContentRequest, 'id' | 'createdAt' | 'status'>) => {
+    if (!user) return
+
+    const newRequest = {
       ...request,
-      id: Date.now().toString(),
-      createdAt: new Date().toISOString(),
-      status: 'pending',
+      user_id: user.id,
+      status: 'pending' as const,
+      created_at: new Date().toISOString(),
     }
-    setContentRequests((current) => [newRequest, ...(current || [])])
+
+    const { data, error } = await supabase
+      .from('content_requests')
+      .insert([newRequest])
+      .select()
+      .single()
+
+    if (!error && data) {
+      setContentRequests((current) => [data as ContentRequest, ...current])
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    )
   }
 
   if (!user) {

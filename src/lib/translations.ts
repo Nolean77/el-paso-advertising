@@ -67,6 +67,11 @@ export const translations = {
       empty: 'No requests submitted yet',
       success: 'Request submitted successfully!',
       images: 'images',
+      fileTooLarge: 'File is too large. Maximum size is 10MB.',
+      compressing: 'Compressing image...',
+      compressionSuccess: 'Image compressed from {original} to {compressed} (saved {ratio}%)',
+      compressionWarning: 'Large file detected ({size}). Compressing...',
+      invalidFileType: 'Please upload image files only (JPG, PNG, GIF, WebP)',
     },
   },
   es: {
@@ -135,6 +140,11 @@ export const translations = {
       empty: 'No se han enviado solicitudes aún',
       success: '¡Solicitud enviada exitosamente!',
       images: 'imágenes',
+      fileTooLarge: 'El archivo es demasiado grande. El tamaño máximo es de 10MB.',
+      compressing: 'Comprimiendo imagen...',
+      compressionSuccess: 'Imagen comprimida de {original} a {compressed} (ahorraste {ratio}%)',
+      compressionWarning: 'Archivo grande detectado ({size}). Comprimiendo...',
+      invalidFileType: 'Por favor, sube solo archivos de imagen (JPG, PNG, GIF, WebP)',
     },
   },
 }

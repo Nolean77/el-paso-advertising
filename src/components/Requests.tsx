@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { Plus, Article, Image as ImageIcon, X, Upload } from '@phosphor-icons/react'
+import { Plus, Article, Image as ImageIcon, X, Upload, Warning } from '@phosphor-icons/react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,6 +13,7 @@ import type { ContentRequest } from '@/lib/types'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { compressImage, formatFileSize, FILE_SIZE_LIMITS } from '@/lib/imageCompression'
 
 interface RequestsProps {
   requests: ContentRequest[]
@@ -30,7 +31,7 @@ export function Requests({ requests, onSubmitRequest, language }: RequestsProps)
 
   const t = translations[language].requests
 
-  const handleFileChange = (files: FileList | null) => {
+  const handleFileChange = async (files: FileList | null) => {
     if (!files) return
 
     const maxImages = 5
@@ -39,9 +40,34 @@ export function Requests({ requests, onSubmitRequest, language }: RequestsProps)
       return
     }
 
-    const newImages: string[] = []
-    Array.from(files).forEach((file) => {
-      if (file.type.startsWith('image/')) {
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith('image/')) {
+        toast.error(t.invalidFileType)
+        continue
+      }
+
+      if (file.size > FILE_SIZE_LIMITS.max) {
+        toast.error(t.fileTooLarge)
+        continue
+      }
+
+      if (file.size > FILE_SIZE_LIMITS.warning) {
+        toast.info(t.compressionWarning.replace('{size}', formatFileSize(file.size)))
+        
+        try {
+          const compressed = await compressImage(file)
+          setReferenceImages((prev) => [...prev, compressed.dataUrl])
+          
+          toast.success(
+            t.compressionSuccess
+              .replace('{original}', formatFileSize(compressed.originalSize))
+              .replace('{compressed}', formatFileSize(compressed.compressedSize))
+              .replace('{ratio}', compressed.compressionRatio.toFixed(0))
+          )
+        } catch (error) {
+          toast.error(language === 'en' ? 'Failed to compress image' : 'Error al comprimir imagen')
+        }
+      } else {
         const reader = new FileReader()
         reader.onload = (e) => {
           const result = e.target?.result as string
@@ -51,7 +77,7 @@ export function Requests({ requests, onSubmitRequest, language }: RequestsProps)
         }
         reader.readAsDataURL(file)
       }
-    })
+    }
   }
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -182,6 +208,14 @@ export function Requests({ requests, onSubmitRequest, language }: RequestsProps)
                   <div>
                     <p className="text-sm font-medium text-foreground">{t.dropzone}</p>
                     <p className="text-xs text-muted-foreground mt-1">{t.maxImages}</p>
+                    <div className="flex items-center justify-center gap-1 mt-2 text-xs text-muted-foreground">
+                      <Warning size={14} weight="bold" className="text-yellow-500" />
+                      <span>
+                        {language === 'en' 
+                          ? `Max 10MB per file • Auto-compression over 5MB` 
+                          : `Máx 10MB por archivo • Auto-compresión sobre 5MB`}
+                      </span>
+                    </div>
                   </div>
                 </div>
                 <input

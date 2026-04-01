@@ -52,6 +52,11 @@ export const translations = {
         campaign: 'Campaign Proposal',
         other: 'Other',
       },
+      referenceImages: 'Reference Images',
+      uploadImages: 'Upload Images',
+      dropzone: 'Drag & drop images here, or click to select',
+      removeImage: 'Remove',
+      maxImages: 'Maximum 5 images',
       submit: 'Submit Request',
       tracker: 'Request Tracker',
       status: {
@@ -61,6 +66,7 @@ export const translations = {
       },
       empty: 'No requests submitted yet',
       success: 'Request submitted successfully!',
+      images: 'images',
     },
   },
   es: {
@@ -114,6 +120,11 @@ export const translations = {
         campaign: 'Propuesta de Campaña',
         other: 'Otro',
       },
+      referenceImages: 'Imágenes de Referencia',
+      uploadImages: 'Subir Imágenes',
+      dropzone: 'Arrastra imágenes aquí, o haz clic para seleccionar',
+      removeImage: 'Eliminar',
+      maxImages: 'Máximo 5 imágenes',
       submit: 'Enviar Solicitud',
       tracker: 'Seguimiento de Solicitudes',
       status: {
@@ -123,6 +134,7 @@ export const translations = {
       },
       empty: 'No se han enviado solicitudes aún',
       success: '¡Solicitud enviada exitosamente!',
+      images: 'imágenes',
     },
   },
 }

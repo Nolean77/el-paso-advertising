@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Plus, Article } from '@phosphor-icons/react'
+import { useState, useRef } from 'react'
+import { Plus, Article, Image as ImageIcon, X, Upload } from '@phosphor-icons/react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,8 +24,55 @@ export function Requests({ requests, onSubmitRequest, language }: RequestsProps)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [type, setType] = useState<ContentRequest['type']>('content')
+  const [referenceImages, setReferenceImages] = useState<string[]>([])
+  const [isDragging, setIsDragging] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const t = translations[language].requests
+
+  const handleFileChange = (files: FileList | null) => {
+    if (!files) return
+
+    const maxImages = 5
+    if (referenceImages.length + files.length > maxImages) {
+      toast.error(t.maxImages)
+      return
+    }
+
+    const newImages: string[] = []
+    Array.from(files).forEach((file) => {
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          const result = e.target?.result as string
+          if (result) {
+            setReferenceImages((prev) => [...prev, result])
+          }
+        }
+        reader.readAsDataURL(file)
+      }
+    })
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+    handleFileChange(e.dataTransfer.files)
+  }
+
+  const removeImage = (index: number) => {
+    setReferenceImages((prev) => prev.filter((_, i) => i !== index))
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -38,11 +85,13 @@ export function Requests({ requests, onSubmitRequest, language }: RequestsProps)
       title,
       description,
       type,
+      referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
     })
 
     setTitle('')
     setDescription('')
     setType('content')
+    setReferenceImages([])
     
     toast.success(t.success)
   }
@@ -111,6 +160,65 @@ export function Requests({ requests, onSubmitRequest, language }: RequestsProps)
               </Select>
             </div>
 
+            <div className="space-y-2">
+              <Label>{t.referenceImages} ({language === 'en' ? 'Optional' : 'Opcional'})</Label>
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`
+                  border-2 border-dashed rounded-lg p-6 transition-all cursor-pointer
+                  ${isDragging 
+                    ? 'border-primary bg-primary/10' 
+                    : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                  }
+                `}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <div className="flex flex-col items-center justify-center gap-3 text-center">
+                  <div className="p-3 rounded-full bg-primary/20">
+                    <Upload size={32} weight="bold" className="text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{t.dropzone}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{t.maxImages}</p>
+                  </div>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => handleFileChange(e.target.files)}
+                />
+              </div>
+
+              {referenceImages.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mt-3">
+                  {referenceImages.map((image, index) => (
+                    <div key={index} className="relative group aspect-square">
+                      <img
+                        src={image}
+                        alt={`Reference ${index + 1}`}
+                        className="w-full h-full object-cover rounded-lg border border-border"
+                      />
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          removeImage(index)
+                        }}
+                        className="absolute -top-2 -right-2 p-1 bg-destructive text-destructive-foreground rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:scale-110"
+                      >
+                        <X size={16} weight="bold" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <Button type="submit" className="w-full h-11 text-base font-semibold" size="lg">
               <Plus size={20} weight="bold" />
               {t.submit}
@@ -134,26 +242,52 @@ export function Requests({ requests, onSubmitRequest, language }: RequestsProps)
             {requests.map((request) => (
               <Card key={request.id} className="hover:border-primary/50 transition-colors">
                 <CardContent className="p-4">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                    <div className="flex-1 space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="font-semibold text-foreground">{request.title}</h4>
-                        <Badge variant="outline" className="capitalize">
-                          {t.types[request.type]}
-                        </Badge>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                      <div className="flex-1 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="font-semibold text-foreground">{request.title}</h4>
+                          <Badge variant="outline" className="capitalize">
+                            {t.types[request.type]}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground line-clamp-2">
+                          {request.description}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {format(new Date(request.createdAt), 'PPP', { 
+                            locale: language === 'es' ? es : undefined 
+                          })}
+                        </p>
                       </div>
-                      <p className="text-sm text-muted-foreground line-clamp-2">
-                        {request.description}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {format(new Date(request.createdAt), 'PPP', { 
-                          locale: language === 'es' ? es : undefined 
-                        })}
-                      </p>
+                      <Badge className={getStatusColor(request.status)}>
+                        {t.status[request.status]}
+                      </Badge>
                     </div>
-                    <Badge className={getStatusColor(request.status)}>
-                      {t.status[request.status]}
-                    </Badge>
+
+                    {request.referenceImages && request.referenceImages.length > 0 && (
+                      <>
+                        <Separator />
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <ImageIcon size={16} weight="bold" />
+                            <span>{request.referenceImages.length} {t.images}</span>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                            {request.referenceImages.map((image, index) => (
+                              <div key={index} className="aspect-square">
+                                <img
+                                  src={image}
+                                  alt={`${request.title} reference ${index + 1}`}
+                                  className="w-full h-full object-cover rounded border border-border hover:scale-105 transition-transform cursor-pointer"
+                                  onClick={() => window.open(image, '_blank')}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </CardContent>
               </Card>

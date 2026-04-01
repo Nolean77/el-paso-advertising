@@ -38,4 +38,5 @@ export interface ContentRequest {
   type: 'content' | 'design' | 'campaign' | 'other'
   status: 'pending' | 'inProgress' | 'completed'
   createdAt: string
+  referenceImages?: string[]
 }

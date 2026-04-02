@@ -35,7 +35,7 @@ export function ContentCalendar({ posts, language }: ContentCalendarProps) {
           >
             <div className="aspect-square bg-secondary/50 relative overflow-hidden">
               <img 
-                src={post.imageUrl} 
+                src={post.image_url} 
                 alt={post.caption}
                 className="w-full h-full object-cover"
               />

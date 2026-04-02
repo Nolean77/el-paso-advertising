@@ -65,7 +65,7 @@ export function Approvals({ posts, onUpdatePost, language }: ApprovalsProps) {
             <Card className="overflow-hidden">
               <div className="aspect-square bg-secondary/50 relative overflow-hidden">
                 <img 
-                  src={post.imageUrl} 
+                  src={post.image_url} 
                   alt={post.caption}
                   className="w-full h-full object-cover"
                 />

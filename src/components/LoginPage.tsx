@@ -43,7 +43,7 @@ export function LoginPage({ onLogin, language, onLanguageToggle }: LoginPageProp
       if (data.user) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('name')
+          .select('name, role')
           .eq('id', data.user.id)
           .single()
 
@@ -51,6 +51,7 @@ export function LoginPage({ onLogin, language, onLanguageToggle }: LoginPageProp
           id: data.user.id,
           email: data.user.email!,
           name: profile?.name || data.user.email?.split('@')[0] || 'User',
+          role: profile?.role || 'client',
         })
       }
     } catch (err) {

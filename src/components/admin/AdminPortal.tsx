@@ -6,12 +6,12 @@ import {
   Users, CalendarPlus, CheckSquare,
   BarChart2, MessageSquare, LayoutDashboard, LogOut
 } from 'lucide-react'
-import { AdminDashboard } from './AdminDashboard'
-import { ClientList } from './ClientList'
-import { PostScheduler } from './PostScheduler'
-import { ApprovalManager } from './ApprovalManager'
-import { MetricsEntry } from './MetricsEntry'
-import { RequestManager } from './RequestManager'
+import { AdminDashboard } from '@/components/admin/AdminDashboard'
+import { ClientList } from '@/components/admin/ClientList'
+import { PostScheduler } from '@/components/admin/PostScheduler'
+import { ApprovalManager } from '@/components/admin/ApprovalManager'
+import { MetricsEntry } from '@/components/admin/MetricsEntry'
+import { RequestManager } from '@/components/admin/RequestManager'
 
 type AdminTab = 'dashboard' | 'clients' | 'schedule' | 'approvals' | 'metrics' | 'requests'
 

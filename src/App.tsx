@@ -126,7 +126,7 @@ function App() {
     }
   }
 
-  const handleSubmitRequest = async (request: Omit<ContentRequest, 'id' | 'createdAt' | 'status'>) => {
+  const handleSubmitRequest = async (request: Omit<ContentRequest, 'id' | 'user_id' | 'created_at' | 'status'>) => {
     if (!user) return
 
     const newRequest = {

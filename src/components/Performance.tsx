@@ -15,14 +15,14 @@ export function Performance({ metrics, language }: PerformanceProps) {
   const totalReach = metrics.reduce((sum, m) => sum + m.reach, 0)
   const totalLikes = metrics.reduce((sum, m) => sum + m.likes, 0)
   const avgEngagement = metrics.length > 0 
-    ? metrics.reduce((sum, m) => sum + m.engagementRate, 0) / metrics.length 
+    ? metrics.reduce((sum, m) => sum + m.engagement_rate, 0) / metrics.length 
     : 0
 
   const chartData = metrics.map(m => ({
     name: m.caption.slice(0, 20) + '...',
     reach: m.reach,
     likes: m.likes,
-    engagement: m.engagementRate,
+    engagement: m.engagement_rate,
   }))
 
   if (metrics.length === 0) {

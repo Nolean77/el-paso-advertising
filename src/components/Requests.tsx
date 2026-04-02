@@ -17,7 +17,7 @@ import { compressImage, formatFileSize, FILE_SIZE_LIMITS } from '@/lib/imageComp
 
 interface RequestsProps {
   requests: ContentRequest[]
-  onSubmitRequest: (request: Omit<ContentRequest, 'id' | 'createdAt' | 'status'>) => void
+  onSubmitRequest: (request: Omit<ContentRequest, 'id' | 'user_id' | 'created_at' | 'status'>) => void
   language: Language
 }
 
@@ -111,7 +111,7 @@ export function Requests({ requests, onSubmitRequest, language }: RequestsProps)
       title,
       description,
       type,
-      referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+      reference_images: referenceImages.length > 0 ? referenceImages : undefined,
     })
 
     setTitle('')
@@ -289,7 +289,7 @@ export function Requests({ requests, onSubmitRequest, language }: RequestsProps)
                           {request.description}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {format(new Date(request.createdAt), 'PPP', { 
+                          {format(new Date(request.created_at), 'PPP', { 
                             locale: language === 'es' ? es : undefined 
                           })}
                         </p>
@@ -299,16 +299,16 @@ export function Requests({ requests, onSubmitRequest, language }: RequestsProps)
                       </Badge>
                     </div>
 
-                    {request.referenceImages && request.referenceImages.length > 0 && (
+                    {request.reference_images && request.reference_images.length > 0 && (
                       <>
                         <Separator />
                         <div className="space-y-2">
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <ImageIcon size={16} weight="bold" />
-                            <span>{request.referenceImages.length} {t.images}</span>
+                            <span>{request.reference_images.length} {t.images}</span>
                           </div>
                           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
-                            {request.referenceImages.map((image, index) => (
+                            {request.reference_images.map((image, index) => (
                               <div key={index} className="aspect-square">
                                 <img
                                   src={image}

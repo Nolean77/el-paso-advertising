@@ -123,15 +123,25 @@ export function AdminPortal({ user, onLogout }: AdminPortalProps) {
 
           {selectedClient && (
             <p className="mt-3 text-sm text-muted-foreground">
-              Currently focused on <span className="font-medium text-foreground">{selectedClient.name}</span>.
+              Currently focused on <span className="font-medium text-foreground">{selectedClient.name}</span>. This applies to every tab except `Clients`.
             </p>
           )}
         </div>
 
         {activeTab === 'dashboard' && (
-          <AdminDashboard selectedClientId={selectedClientId} selectedClientName={selectedClient?.name} />
+          <AdminDashboard
+            selectedClientId={selectedClientId}
+            selectedClientName={selectedClient?.name}
+            clients={clients}
+            onSelectClient={setSelectedClientId}
+          />
         )}
-        {activeTab === 'clients'   && <ClientList />}
+        {activeTab === 'clients'   && (
+          <ClientList
+            selectedClientId={selectedClientId}
+            onSelectClient={setSelectedClientId}
+          />
+        )}
         {activeTab === 'schedule'  && (
           <PostScheduler selectedClientId={selectedClientId} selectedClientName={selectedClient?.name} />
         )}

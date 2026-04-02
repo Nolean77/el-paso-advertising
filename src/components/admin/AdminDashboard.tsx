@@ -1,14 +1,19 @@
 import { useEffect, useState } from 'react'
+import { ClientProfile } from '@/lib/types'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Users, CalendarDays, CheckSquare, MessageSquare } from 'lucide-react'
 
 interface AdminDashboardProps {
   selectedClientId?: string
   selectedClientName?: string
+  clients: ClientProfile[]
+  onSelectClient: (clientId: string) => void
 }
 
-export function AdminDashboard({ selectedClientId, selectedClientName }: AdminDashboardProps) {
+export function AdminDashboard({ selectedClientId, selectedClientName, clients, onSelectClient }: AdminDashboardProps) {
   const [counts, setCounts] = useState({
     clients: 0, posts: 0, pending: 0, requests: 0
   })
@@ -53,13 +58,29 @@ export function AdminDashboard({ selectedClientId, selectedClientName }: AdminDa
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold">Dashboard</h2>
-        <p className="text-sm text-muted-foreground">
-          {selectedClientName
-            ? <>Currently viewing <span className="font-medium text-foreground">{selectedClientName}</span>.</>
-            : 'Select a client above to focus the admin workspace.'}
-        </p>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">Dashboard</h2>
+          <p className="text-sm text-muted-foreground">
+            {selectedClientName
+              ? <>Currently viewing <span className="font-medium text-foreground">{selectedClientName}</span>.</>
+              : 'Select a client here to focus the admin workspace.'}
+          </p>
+        </div>
+
+        <div className="w-full lg:max-w-sm space-y-2">
+          <Label htmlFor="dashboard-client-switcher">Working client</Label>
+          <Select value={selectedClientId} onValueChange={onSelectClient} disabled={clients.length === 0}>
+            <SelectTrigger id="dashboard-client-switcher">
+              <SelectValue placeholder={clients.length === 0 ? 'No clients available' : 'Select a client'} />
+            </SelectTrigger>
+            <SelectContent>
+              {clients.map((client) => (
+                <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">

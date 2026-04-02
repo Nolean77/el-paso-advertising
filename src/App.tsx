@@ -10,6 +10,7 @@ import { ContentCalendar } from '@/components/ContentCalendar'
 import { Approvals } from '@/components/Approvals'
 import { Performance } from '@/components/Performance'
 import { Requests } from '@/components/Requests'
+import { AdminPortal } from '@/components/admin/AdminPortal'
 import { supabase } from '@/lib/supabase'
 import type { Language } from '@/lib/translations'
 import { translations } from '@/lib/translations'
@@ -29,7 +30,7 @@ function App() {
       if (session?.user) {
         supabase
           .from('profiles')
-          .select('name')
+          .select('name, role')
           .eq('id', session.user.id)
           .single()
           .then(({ data: profile }) => {
@@ -37,6 +38,7 @@ function App() {
               id: session.user.id,
               email: session.user.email!,
               name: profile?.name || session.user.email?.split('@')[0] || 'User',
+              role: profile?.role || 'client',
             })
           })
       }
@@ -49,7 +51,7 @@ function App() {
       if (session?.user) {
         supabase
           .from('profiles')
-          .select('name')
+          .select('name, role')
           .eq('id', session.user.id)
           .single()
           .then(({ data: profile }) => {
@@ -57,6 +59,7 @@ function App() {
               id: session.user.id,
               email: session.user.email!,
               name: profile?.name || session.user.email?.split('@')[0] || 'User',
+              role: profile?.role || 'client',
             })
           })
       } else {
@@ -156,6 +159,15 @@ function App() {
     return (
       <>
         <LoginPage onLogin={handleLogin} language={currentLanguage} onLanguageToggle={toggleLanguage} />
+        <Toaster />
+      </>
+    )
+  }
+
+  if (user.role === 'admin') {
+    return (
+      <>
+        <AdminPortal user={user} onLogout={handleLogout} />
         <Toaster />
       </>
     )

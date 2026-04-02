@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Calendar as CalendarIcon, Clock, CheckCircle, PencilSimple, ChatCircle } from '@phosphor-icons/react'
+import { Calendar as CalendarIcon, Clock, CheckCircle, PencilSimple, ChatCircle, Trash } from '@phosphor-icons/react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,7 @@ interface ContentCalendarProps {
   posts: ScheduledPost[]
   approvalPosts?: ApprovalPost[]
   onUpdatePost?: (postId: string, status: ApprovalPost['status'], feedback?: string) => void | Promise<void>
+  onDeletePost?: (postId: string) => void | Promise<void>
   language: Language
 }
 
@@ -27,9 +28,10 @@ type CalendarItem = {
   status: 'pending' | 'approved'
   feedback?: string
   approvalId?: string
+  scheduledId?: string
 }
 
-export function ContentCalendar({ posts, approvalPosts = [], onUpdatePost, language }: ContentCalendarProps) {
+export function ContentCalendar({ posts, approvalPosts = [], onUpdatePost, onDeletePost, language }: ContentCalendarProps) {
   const [activeComment, setActiveComment] = useState<string | null>(null)
   const [commentText, setCommentText] = useState('')
   const t = translations[language].calendar
@@ -53,14 +55,17 @@ export function ContentCalendar({ posts, approvalPosts = [], onUpdatePost, langu
       }
     })
 
-  const approvedItems: CalendarItem[] = posts.map((post) => ({
-    id: `scheduled-${post.id}`,
-    date: post.date,
-    platform: post.platform,
-    caption: post.caption,
-    imageUrl: post.image_url,
-    status: 'approved' as const,
-  }))
+  const approvedItems: CalendarItem[] = posts
+    .filter((post) => post.status === 'scheduled')
+    .map((post) => ({
+      id: `scheduled-${post.id}`,
+      scheduledId: post.id,
+      date: post.date,
+      platform: post.platform,
+      caption: post.caption,
+      imageUrl: post.image_url,
+      status: 'approved' as const,
+    }))
 
   const calendarItems = [...pendingApprovalItems, ...approvedItems].sort((a, b) => a.date.localeCompare(b.date))
 
@@ -80,6 +85,19 @@ export function ContentCalendar({ posts, approvalPosts = [], onUpdatePost, langu
     }
 
     setActiveComment(approvalId)
+  }
+
+  const handleRemove = async (scheduledId?: string) => {
+    if (!scheduledId || !onDeletePost) return
+
+    const confirmed = window.confirm(
+      language === 'en'
+        ? 'Remove this post from the content calendar?'
+        : '¿Quitar esta publicación del calendario de contenido?'
+    )
+
+    if (!confirmed) return
+    await onDeletePost(scheduledId)
   }
 
   if (calendarItems.length === 0) {
@@ -182,6 +200,18 @@ export function ContentCalendar({ posts, approvalPosts = [], onUpdatePost, langu
                     </Button>
                   </div>
                 </>
+              )}
+
+              {item.status === 'approved' && item.scheduledId && onDeletePost && (
+                <Button
+                  onClick={() => handleRemove(item.scheduledId)}
+                  variant="outline"
+                  className="w-full gap-2 text-destructive hover:text-destructive"
+                  size="sm"
+                >
+                  <Trash size={18} weight="bold" />
+                  {language === 'en' ? 'Remove from Calendar' : 'Quitar del calendario'}
+                </Button>
               )}
             </CardContent>
           </Card>

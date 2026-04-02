@@ -81,7 +81,7 @@ function App() {
 
     const loadData = async () => {
       const [scheduledRes, approvalsRes, metricsRes, requestsRes] = await Promise.all([
-        supabase.from('scheduled_posts').select('*').eq('user_id', user.id).order('date', { ascending: true }),
+        supabase.from('scheduled_posts').select('*').eq('user_id', user.id).eq('status', 'scheduled').order('date', { ascending: true }),
         supabase.from('approval_posts').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
         supabase.from('performance_metrics').select('*').eq('user_id', user.id).order('date', { ascending: false }),
         supabase.from('content_requests').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
@@ -132,6 +132,7 @@ function App() {
       .eq('date', scheduledDate)
       .eq('platform', post.platform)
       .eq('caption', caption)
+      .eq('status', 'scheduled')
       .limit(1)
 
     if (duplicateCheckError) {
@@ -181,6 +182,72 @@ function App() {
         [...currentPosts, data as ScheduledPost].sort((a, b) => a.date.localeCompare(b.date))
       )
     }
+  }
+
+  const handleDeleteScheduledPost = async (postId: string) => {
+    if (!user) return
+
+    const targetPost = scheduledPosts.find((post) => post.id === postId)
+    if (!targetPost) return
+
+    const { error: markRemovedError } = await supabase
+      .from('scheduled_posts')
+      .update({ status: 'removed' })
+      .eq('id', postId)
+      .eq('user_id', user.id)
+
+    if (markRemovedError) {
+      toast.error(currentLanguage === 'en'
+        ? 'Unable to remove this post from the content calendar.'
+        : 'No se pudo quitar esta publicación del calendario de contenido.')
+      return
+    }
+
+    const removalCaption = encodeApprovalCaption(targetPost.caption, {
+      requestedBy: 'client',
+      requestedDate: targetPost.date,
+      sourceScheduledPostId: targetPost.id,
+      changeType: 'removed',
+      title: targetPost.caption.split('\n')[0]?.slice(0, 80) || 'Calendar Post',
+    })
+
+    const { data: removalData, error: removalError } = await supabase
+      .from('approval_posts')
+      .insert([{
+        user_id: user.id,
+        caption: removalCaption,
+        image_url: targetPost.image_url || buildApprovalImagePlaceholder(targetPost.caption),
+        platform: targetPost.platform,
+        status: 'changes-requested',
+        feedback: currentLanguage === 'en'
+          ? 'Client removed this post from the content calendar and requested admin review.'
+          : 'El cliente quitó esta publicación del calendario de contenido y solicitó revisión del administrador.',
+      }])
+      .select()
+      .single()
+
+    if (removalError) {
+      await supabase
+        .from('scheduled_posts')
+        .update({ status: 'scheduled' })
+        .eq('id', postId)
+        .eq('user_id', user.id)
+
+      toast.error(currentLanguage === 'en'
+        ? 'The post could not be routed to admin review, so it stayed on the calendar.'
+        : 'La publicación no pudo enviarse a revisión del administrador, así que permaneció en el calendario.')
+      return
+    }
+
+    setScheduledPosts((currentPosts) => currentPosts.filter((post) => post.id !== postId))
+
+    if (removalData) {
+      setApprovalPosts((currentPosts) => [removalData as ApprovalPost, ...currentPosts])
+    }
+
+    toast.success(currentLanguage === 'en'
+      ? 'Post removed from your calendar and sent to admin review.'
+      : 'La publicación fue eliminada de tu calendario y enviada a revisión del administrador.')
   }
 
   const handleLogin = (loggedInUser: User) => {
@@ -382,6 +449,7 @@ function App() {
                 posts={scheduledPosts || []}
                 approvalPosts={approvalPosts || []}
                 onUpdatePost={handleUpdatePost}
+                onDeletePost={handleDeleteScheduledPost}
                 language={currentLanguage}
               />
             </TabsContent>

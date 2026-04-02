@@ -5,17 +5,19 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { supabase } from '@/lib/supabase'
 import {
-  Users, CalendarPlus, CheckSquare,
-  BarChart2, MessageSquare, LayoutDashboard, LogOut
+  Users, CalendarPlus, CalendarDays, CheckSquare,
+  BarChart2, MessageSquare, LayoutDashboard, LogOut, RefreshCcw
 } from 'lucide-react'
 import { AdminDashboard } from '@/components/admin/AdminDashboard'
 import { ClientList } from '@/components/admin/ClientList'
+import { AdminCalendar } from '@/components/admin/AdminCalendar'
 import { PostScheduler } from '@/components/admin/PostScheduler'
 import { ApprovalManager } from '@/components/admin/ApprovalManager'
+import { RequestedChangesManager } from '@/components/admin/RequestedChangesManager'
 import { MetricsEntry } from '@/components/admin/MetricsEntry'
 import { RequestManager } from '@/components/admin/RequestManager'
 
-type AdminTab = 'dashboard' | 'clients' | 'schedule' | 'approvals' | 'metrics' | 'requests'
+type AdminTab = 'dashboard' | 'clients' | 'calendar' | 'schedule' | 'approvals' | 'changes' | 'metrics' | 'requests'
 
 interface AdminPortalProps {
   user: User
@@ -48,12 +50,14 @@ export function AdminPortal({ user, onLogout }: AdminPortalProps) {
   }
 
   const navItems = [
-    { id: 'dashboard' as AdminTab, label: 'Dashboard',    icon: LayoutDashboard },
-    { id: 'clients'   as AdminTab, label: 'Clients',      icon: Users },
-    { id: 'schedule'  as AdminTab, label: 'Create Post',  icon: CalendarPlus },
-    { id: 'approvals' as AdminTab, label: 'Approvals',    icon: CheckSquare },
-    { id: 'metrics'   as AdminTab, label: 'Metrics',      icon: BarChart2 },
-    { id: 'requests'  as AdminTab, label: 'Requests',     icon: MessageSquare },
+    { id: 'dashboard' as AdminTab, label: 'Dashboard',         icon: LayoutDashboard },
+    { id: 'clients'   as AdminTab, label: 'Clients',           icon: Users },
+    { id: 'calendar'  as AdminTab, label: 'Calendar',          icon: CalendarDays },
+    { id: 'schedule'  as AdminTab, label: 'Create Post',       icon: CalendarPlus },
+    { id: 'approvals' as AdminTab, label: 'Approvals',         icon: CheckSquare },
+    { id: 'changes'   as AdminTab, label: 'Requested Changes', icon: RefreshCcw },
+    { id: 'metrics'   as AdminTab, label: 'Metrics',           icon: BarChart2 },
+    { id: 'requests'  as AdminTab, label: 'Requests',          icon: MessageSquare },
   ]
 
   return (
@@ -66,7 +70,7 @@ export function AdminPortal({ user, onLogout }: AdminPortalProps) {
           <p className="text-xs text-muted-foreground mt-1">{user.name}</p>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {navItems.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
@@ -142,11 +146,17 @@ export function AdminPortal({ user, onLogout }: AdminPortalProps) {
             onSelectClient={setSelectedClientId}
           />
         )}
+        {activeTab === 'calendar'  && (
+          <AdminCalendar selectedClientId={selectedClientId} selectedClientName={selectedClient?.name} />
+        )}
         {activeTab === 'schedule'  && (
           <PostScheduler selectedClientId={selectedClientId} selectedClientName={selectedClient?.name} />
         )}
         {activeTab === 'approvals' && (
           <ApprovalManager selectedClientId={selectedClientId} selectedClientName={selectedClient?.name} />
+        )}
+        {activeTab === 'changes'   && (
+          <RequestedChangesManager selectedClientId={selectedClientId} selectedClientName={selectedClient?.name} />
         )}
         {activeTab === 'metrics'   && (
           <MetricsEntry selectedClientId={selectedClientId} selectedClientName={selectedClient?.name} />

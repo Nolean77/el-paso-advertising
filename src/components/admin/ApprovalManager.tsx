@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
+import { ImageUploadField } from '@/components/ImageUploadField'
 
 interface ApprovalManagerProps {
   selectedClientId?: string
@@ -37,6 +38,8 @@ export function ApprovalManager({ selectedClientId, selectedClientName }: Approv
     ? posts.filter((post) => post.user_id === selectedClientId)
     : posts
 
+  const visiblePosts = filteredPosts.filter((post) => post.status !== 'changes-requested')
+
   const syncRequestStatus = async (post: ApprovalPost, status: ApprovalPost['status']) => {
     const { meta } = parseApprovalCaption(post.caption)
     if (!meta.sourceRequestId) return
@@ -60,6 +63,7 @@ export function ApprovalManager({ selectedClientId, selectedClientName }: Approv
       .eq('date', scheduledDateValue)
       .eq('platform', post.platform)
       .eq('caption', visibleCaption)
+      .eq('status', 'scheduled')
       .limit(1)
 
     if (existingError) {
@@ -228,10 +232,12 @@ export function ApprovalManager({ selectedClientId, selectedClientName }: Approv
               <Textarea value={caption} onChange={(e) => setCaption(e.target.value)} rows={4} />
             </div>
 
-            <div className="space-y-2">
-              <Label>Image URL (optional)</Label>
-              <Input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://..." />
-            </div>
+            <ImageUploadField
+              label="Image (optional)"
+              value={imageUrl}
+              onChange={setImageUrl}
+              helperText="Drag and drop a photo, upload one from your device, or paste an image URL for this approval item."
+            />
 
             <Button type="submit" disabled={saving || !selectedClientId} className="w-full">
               {saving ? 'Sending...' : 'Send to Client Approval'}
@@ -242,14 +248,14 @@ export function ApprovalManager({ selectedClientId, selectedClientName }: Approv
 
       <div className="space-y-3">
         <h3 className="font-semibold text-lg">
-          Approval Queue ({filteredPosts.filter((post) => post.status === 'pending').length} pending)
+          Approval Queue ({visiblePosts.filter((post) => post.status === 'pending').length} pending)
         </h3>
 
-        {filteredPosts.length === 0 ? (
+        {visiblePosts.length === 0 ? (
           <div className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
             No approval items for this client yet.
           </div>
-        ) : filteredPosts.map((post) => {
+        ) : visiblePosts.map((post) => {
           const { caption: visibleCaption, meta } = parseApprovalCaption(post.caption)
           const isClientSubmitted = meta.requestedBy === 'client'
 

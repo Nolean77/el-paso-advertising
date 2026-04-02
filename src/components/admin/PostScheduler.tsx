@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
 import { buildApprovalImagePlaceholder, encodeApprovalCaption } from '@/lib/utils'
+import { ImageUploadField } from '@/components/ImageUploadField'
 
 interface PostSchedulerProps {
   selectedClientId?: string
@@ -109,10 +110,12 @@ export function PostScheduler({ selectedClientId, selectedClientName }: PostSche
               <Textarea value={caption} onChange={e => setCaption(e.target.value)} rows={4} />
             </div>
 
-            <div className="space-y-2">
-              <Label>Image URL</Label>
-              <Input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://..." />
-            </div>
+            <ImageUploadField
+              label="Post Image"
+              value={imageUrl}
+              onChange={setImageUrl}
+              helperText="Drag and drop a photo, upload one from your device, or paste an image URL."
+            />
 
             <Button type="submit" disabled={saving || !selectedClientId} className="w-full">
               {saving ? 'Sending...' : 'Send to Approvals'}

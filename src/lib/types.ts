@@ -12,7 +12,7 @@ export interface ScheduledPost {
   platform: 'instagram' | 'facebook' | 'twitter' | 'linkedin'
   caption: string
   image_url: string
-  status: 'scheduled'
+  status: 'scheduled' | 'removed'
 }
 
 export interface ApprovalPost {
@@ -30,6 +30,8 @@ export interface ApprovalWorkflowMeta {
   requestedBy?: 'admin' | 'client'
   requestedDate?: string
   sourceRequestId?: string
+  sourceScheduledPostId?: string
+  changeType?: 'revision' | 'removed'
   title?: string
 }
 

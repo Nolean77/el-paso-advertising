@@ -21,7 +21,7 @@ export function AdminDashboard({ selectedClientId, selectedClientName, clients, 
   useEffect(() => {
     async function load() {
       const clientsQuery = supabase.from('profiles').select('id', { count: 'exact' }).ilike('role', 'client')
-      const postsQuery = supabase.from('scheduled_posts').select('id', { count: 'exact' })
+      const postsQuery = supabase.from('scheduled_posts').select('id', { count: 'exact' }).eq('status', 'scheduled')
       const pendingQuery = supabase.from('approval_posts').select('id', { count: 'exact' }).eq('status', 'pending')
       const requestsQuery = supabase.from('content_requests').select('id', { count: 'exact' }).eq('status', 'pending')
 

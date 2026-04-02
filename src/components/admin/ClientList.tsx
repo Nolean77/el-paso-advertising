@@ -13,7 +13,7 @@ export function ClientList() {
     supabase
       .from('profiles')
       .select('*')
-      .eq('role', 'client')
+      .ilike('role', 'client')
       .order('created_at', { ascending: false })
       .then(({ data }) => {
         setClients((data as ClientProfile[]) ?? [])

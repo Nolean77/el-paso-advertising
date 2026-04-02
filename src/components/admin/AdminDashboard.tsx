@@ -11,7 +11,7 @@ export function AdminDashboard() {
   useEffect(() => {
     async function load() {
       const [clients, posts, pending, requests] = await Promise.all([
-        supabase.from('profiles').select('id', { count: 'exact' }).eq('role', 'client'),
+        supabase.from('profiles').select('id', { count: 'exact' }).ilike('role', 'client'),
         supabase.from('scheduled_posts').select('id', { count: 'exact' }),
         supabase.from('approval_posts').select('id', { count: 'exact' }).eq('status', 'pending'),
         supabase.from('content_requests').select('id', { count: 'exact' }).eq('status', 'pending'),

@@ -14,6 +14,7 @@ import { AdminPortal } from '@/components/admin/AdminPortal'
 import { supabase } from '@/lib/supabase'
 import type { Language } from '@/lib/translations'
 import { translations } from '@/lib/translations'
+import { resolveUserRole } from '@/lib/utils'
 import type { User, ScheduledPost, ApprovalPost, PerformanceMetric, ContentRequest } from '@/lib/types'
 
 function App() {
@@ -30,7 +31,7 @@ function App() {
       if (session?.user) {
         supabase
           .from('profiles')
-          .select('name, role')
+          .select('*')
           .eq('id', session.user.id)
           .single()
           .then(({ data: profile }) => {
@@ -38,7 +39,7 @@ function App() {
               id: session.user.id,
               email: session.user.email!,
               name: profile?.name || session.user.email?.split('@')[0] || 'User',
-              role: profile?.role || 'client',
+              role: resolveUserRole(profile?.role, session.user.user_metadata?.role, session.user.app_metadata?.role),
             })
           })
       }
@@ -51,7 +52,7 @@ function App() {
       if (session?.user) {
         supabase
           .from('profiles')
-          .select('name, role')
+          .select('*')
           .eq('id', session.user.id)
           .single()
           .then(({ data: profile }) => {
@@ -59,7 +60,7 @@ function App() {
               id: session.user.id,
               email: session.user.email!,
               name: profile?.name || session.user.email?.split('@')[0] || 'User',
-              role: profile?.role || 'client',
+              role: resolveUserRole(profile?.role, session.user.user_metadata?.role, session.user.app_metadata?.role),
             })
           })
       } else {

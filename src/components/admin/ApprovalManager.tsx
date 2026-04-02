@@ -20,7 +20,7 @@ export function ApprovalManager() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    supabase.from('profiles').select('*').eq('role', 'client')
+    supabase.from('profiles').select('*').ilike('role', 'client')
       .then(({ data }) => setClients((data as ClientProfile[]) ?? []))
 
     supabase.from('approval_posts').select('*').eq('status', 'pending')

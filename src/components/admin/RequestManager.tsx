@@ -15,7 +15,7 @@ export function RequestManager() {
   useEffect(() => {
     Promise.all([
       supabase.from('content_requests').select('*').order('created_at', { ascending: false }),
-      supabase.from('profiles').select('*').eq('role', 'client'),
+      supabase.from('profiles').select('*').ilike('role', 'client'),
     ]).then(([reqRes, clientRes]) => {
       setRequests((reqRes.data as ContentRequest[]) ?? [])
       setClients((clientRes.data as ClientProfile[]) ?? [])

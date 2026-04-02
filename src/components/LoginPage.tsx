@@ -8,6 +8,7 @@ import { LanguageToggle } from '@/components/LanguageToggle'
 import { translations, type Language } from '@/lib/translations'
 import { supabase } from '@/lib/supabase'
 import type { User } from '@/lib/types'
+import { resolveUserRole } from '@/lib/utils'
 
 interface LoginPageProps {
   onLogin: (user: User) => void
@@ -43,7 +44,7 @@ export function LoginPage({ onLogin, language, onLanguageToggle }: LoginPageProp
       if (data.user) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('name, role')
+          .select('*')
           .eq('id', data.user.id)
           .single()
 
@@ -51,7 +52,7 @@ export function LoginPage({ onLogin, language, onLanguageToggle }: LoginPageProp
           id: data.user.id,
           email: data.user.email!,
           name: profile?.name || data.user.email?.split('@')[0] || 'User',
-          role: profile?.role || 'client',
+          role: resolveUserRole(profile?.role, data.user.user_metadata?.role, data.user.app_metadata?.role),
         })
       }
     } catch (err) {

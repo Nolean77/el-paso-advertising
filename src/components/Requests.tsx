@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { translations, type Language } from '@/lib/translations'
-import type { ContentRequest } from '@/lib/types'
+import type { ContentRequest, RequestSubmission } from '@/lib/types'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -17,7 +17,7 @@ import { compressImage, formatFileSize, FILE_SIZE_LIMITS } from '@/lib/imageComp
 
 interface RequestsProps {
   requests: ContentRequest[]
-  onSubmitRequest: (request: Omit<ContentRequest, 'id' | 'user_id' | 'created_at' | 'status'>) => void
+  onSubmitRequest: (request: RequestSubmission) => void
   language: Language
 }
 
@@ -25,6 +25,8 @@ export function Requests({ requests, onSubmitRequest, language }: RequestsProps)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [type, setType] = useState<ContentRequest['type']>('content')
+  const [platform, setPlatform] = useState<RequestSubmission['platform']>('instagram')
+  const [requestedDate, setRequestedDate] = useState(() => new Date().toISOString().split('T')[0])
   const [referenceImages, setReferenceImages] = useState<string[]>([])
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -111,12 +113,16 @@ export function Requests({ requests, onSubmitRequest, language }: RequestsProps)
       title,
       description,
       type,
+      platform,
+      requested_date: requestedDate || undefined,
       reference_images: referenceImages.length > 0 ? referenceImages : undefined,
     })
 
     setTitle('')
     setDescription('')
     setType('content')
+    setPlatform('instagram')
+    setRequestedDate(new Date().toISOString().split('T')[0])
     setReferenceImages([])
     
     toast.success(t.success)
@@ -184,6 +190,38 @@ export function Requests({ requests, onSubmitRequest, language }: RequestsProps)
                   <SelectItem value="other">{t.types.other}</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="request-platform">
+                  {language === 'en' ? 'Preferred Platform' : 'Plataforma Preferida'}
+                </Label>
+                <Select value={platform} onValueChange={(v) => setPlatform(v as RequestSubmission['platform'])}>
+                  <SelectTrigger id="request-platform" className="h-11">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="instagram">Instagram</SelectItem>
+                    <SelectItem value="facebook">Facebook</SelectItem>
+                    <SelectItem value="twitter">Twitter / X</SelectItem>
+                    <SelectItem value="linkedin">LinkedIn</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="request-date">
+                  {language === 'en' ? 'Preferred Publish Date' : 'Fecha Preferida de Publicación'}
+                </Label>
+                <Input
+                  id="request-date"
+                  type="date"
+                  value={requestedDate}
+                  onChange={(e) => setRequestedDate(e.target.value)}
+                  className="h-11"
+                />
+              </div>
             </div>
 
             <div className="space-y-2">

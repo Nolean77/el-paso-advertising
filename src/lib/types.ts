@@ -23,6 +23,14 @@ export interface ApprovalPost {
   platform: 'instagram' | 'facebook' | 'twitter' | 'linkedin'
   status: 'pending' | 'approved' | 'changes-requested'
   feedback?: string
+  created_at?: string
+}
+
+export interface ApprovalWorkflowMeta {
+  requestedBy?: 'admin' | 'client'
+  requestedDate?: string
+  sourceRequestId?: string
+  title?: string
 }
 
 export interface PerformanceMetric {
@@ -45,6 +53,11 @@ export interface ContentRequest {
   status: 'pending' | 'inProgress' | 'completed'
   created_at: string
   reference_images?: string[]
+}
+
+export interface RequestSubmission extends Omit<ContentRequest, 'id' | 'user_id' | 'created_at' | 'status'> {
+  platform: ApprovalPost['platform']
+  requested_date?: string
 }
 
 export interface ClientProfile {

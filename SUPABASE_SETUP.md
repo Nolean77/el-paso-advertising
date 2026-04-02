@@ -24,6 +24,7 @@ Run the following SQL commands in your Supabase SQL Editor to set up the databas
 CREATE TABLE profiles (
   id UUID REFERENCES auth.users(id) PRIMARY KEY,
   name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'client' CHECK (role IN ('admin', 'client')),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -125,8 +126,15 @@ CREATE POLICY "Users can insert own content requests" ON content_requests
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.profiles (id, name)
-  VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)));
+  INSERT INTO public.profiles (id, name, role)
+  VALUES (
+    NEW.id,
+    COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
+    CASE
+      WHEN lower(COALESCE(NEW.raw_user_meta_data->>'role', 'client')) = 'admin' THEN 'admin'
+      ELSE 'client'
+    END
+  );
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -134,6 +142,24 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+```
+
+### 1a. Admin Workflow Patch (Required for the admin portal)
+
+After running the base schema above, also run the SQL in `supabase-admin-rls.sql` from this repo.
+
+This patch:
+- adds the missing `profiles.role` support,
+- lets admins see and manage all client workflow records,
+- allows client requests to be mirrored into `approval_posts`, and
+- allows approved items to be pushed into `scheduled_posts` for the content calendar.
+
+To promote your admin account after signup:
+
+```sql
+UPDATE public.profiles
+SET role = 'admin'
+WHERE id = 'YOUR_ADMIN_USER_ID';
 ```
 
 ### 2. Storage Setup

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useKV } from '@github/spark/hooks'
 import { SignOut, CalendarBlank, CheckSquare, ChartBar, Article } from '@phosphor-icons/react'
+import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
@@ -14,8 +15,8 @@ import { AdminPortal } from '@/components/admin/AdminPortal'
 import { supabase } from '@/lib/supabase'
 import type { Language } from '@/lib/translations'
 import { translations } from '@/lib/translations'
-import { resolveUserRole } from '@/lib/utils'
-import type { User, ScheduledPost, ApprovalPost, PerformanceMetric, ContentRequest } from '@/lib/types'
+import { buildApprovalImagePlaceholder, encodeApprovalCaption, parseApprovalCaption, resolveUserRole } from '@/lib/utils'
+import type { User, ScheduledPost, ApprovalPost, PerformanceMetric, ContentRequest, RequestSubmission } from '@/lib/types'
 
 function App() {
   const [user, setUser] = useState<User | null>(null)
@@ -98,6 +99,59 @@ function App() {
   const currentLanguage = language || 'en'
   const t = translations[currentLanguage].nav
 
+  const syncRequestStatusFromApproval = async (post: ApprovalPost, approvalStatus: ApprovalPost['status']) => {
+    const { meta } = parseApprovalCaption(post.caption)
+    if (!meta.sourceRequestId) return
+
+    const nextStatus = approvalStatus === 'approved' ? 'completed' : 'inProgress'
+    const { error } = await supabase
+      .from('content_requests')
+      .update({ status: nextStatus })
+      .eq('id', meta.sourceRequestId)
+      .eq('user_id', post.user_id)
+
+    if (!error) {
+      setContentRequests((currentRequests) =>
+        currentRequests.map((request) =>
+          request.id === meta.sourceRequestId
+            ? { ...request, status: nextStatus }
+            : request
+        )
+      )
+    }
+  }
+
+  const addApprovedPostToCalendar = async (post: ApprovalPost) => {
+    const { caption, meta } = parseApprovalCaption(post.caption)
+    const scheduledDate = meta.requestedDate || new Date().toISOString().split('T')[0]
+
+    const { data, error } = await supabase
+      .from('scheduled_posts')
+      .insert([{
+        user_id: post.user_id,
+        date: scheduledDate,
+        platform: post.platform,
+        caption,
+        image_url: post.image_url || buildApprovalImagePlaceholder(meta.title || caption),
+        status: 'scheduled',
+      }])
+      .select()
+      .single()
+
+    if (error) {
+      toast.error(currentLanguage === 'en'
+        ? 'The item was approved, but it could not be added to the content calendar.'
+        : 'El elemento fue aprobado, pero no se pudo agregar al calendario de contenido.')
+      return
+    }
+
+    if (data) {
+      setScheduledPosts((currentPosts) =>
+        [...currentPosts, data as ScheduledPost].sort((a, b) => a.date.localeCompare(b.date))
+      )
+    }
+  }
+
   const handleLogin = (loggedInUser: User) => {
     setUser(loggedInUser)
   }
@@ -114,28 +168,41 @@ function App() {
   const handleUpdatePost = async (postId: string, status: ApprovalPost['status'], feedback?: string) => {
     if (!user) return
 
+    const targetPost = approvalPosts.find((post) => post.id === postId)
+    if (!targetPost) return
+
     const { error } = await supabase
       .from('approval_posts')
       .update({ status, feedback: feedback || null })
       .eq('id', postId)
       .eq('user_id', user.id)
 
-    if (!error) {
-      setApprovalPosts((currentPosts) =>
-        currentPosts.map((post) =>
-          post.id === postId
-            ? { ...post, status, feedback: feedback || post.feedback }
-            : post
-        )
+    if (error) {
+      toast.error(currentLanguage === 'en' ? 'Unable to update approval status.' : 'No se pudo actualizar el estado de aprobación.')
+      return
+    }
+
+    setApprovalPosts((currentPosts) =>
+      currentPosts.map((post) =>
+        post.id === postId
+          ? { ...post, status, feedback: feedback || post.feedback }
+          : post
       )
+    )
+
+    await syncRequestStatusFromApproval(targetPost, status)
+
+    if (status === 'approved') {
+      await addApprovedPostToCalendar(targetPost)
     }
   }
 
-  const handleSubmitRequest = async (request: Omit<ContentRequest, 'id' | 'user_id' | 'created_at' | 'status'>) => {
+  const handleSubmitRequest = async (request: RequestSubmission) => {
     if (!user) return
 
+    const { platform, requested_date, ...requestDetails } = request
     const newRequest = {
-      ...request,
+      ...requestDetails,
       user_id: user.id,
       status: 'pending' as const,
       created_at: new Date().toISOString(),
@@ -147,8 +214,44 @@ function App() {
       .select()
       .single()
 
-    if (!error && data) {
-      setContentRequests((current) => [data as ContentRequest, ...current])
+    if (error || !data) {
+      toast.error(currentLanguage === 'en' ? 'Unable to submit your request right now.' : 'No se pudo enviar tu solicitud en este momento.')
+      return
+    }
+
+    setContentRequests((current) => [data as ContentRequest, ...current])
+
+    const approvalCaption = encodeApprovalCaption(
+      `${request.title}\n\n${request.description}`,
+      {
+        requestedBy: 'client',
+        requestedDate: requested_date,
+        sourceRequestId: data.id,
+        title: request.title,
+      }
+    )
+
+    const { data: approvalData, error: approvalError } = await supabase
+      .from('approval_posts')
+      .insert([{
+        user_id: user.id,
+        caption: approvalCaption,
+        image_url: request.reference_images?.[0] || buildApprovalImagePlaceholder(request.title),
+        platform,
+        status: 'pending',
+      }])
+      .select()
+      .single()
+
+    if (approvalError) {
+      toast.error(currentLanguage === 'en'
+        ? 'Your request was saved, but it could not be routed to approvals.'
+        : 'Tu solicitud se guardó, pero no pudo enviarse a aprobaciones.')
+      return
+    }
+
+    if (approvalData) {
+      setApprovalPosts((current) => [approvalData as ApprovalPost, ...current])
     }
   }
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { CheckCircle, ChatCircle, PencilSimple } from '@phosphor-icons/react'
 import { format } from 'date-fns'
 import { supabase } from '@/lib/supabase'
-import { ClientProfile, ApprovalPost } from '@/lib/types'
+import { ApprovalPost } from '@/lib/types'
 import { buildApprovalImagePlaceholder, encodeApprovalCaption, parseApprovalCaption } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,10 +13,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 
-export function ApprovalManager() {
-  const [clients, setClients] = useState<ClientProfile[]>([])
+interface ApprovalManagerProps {
+  selectedClientId?: string
+  selectedClientName?: string
+}
+
+export function ApprovalManager({ selectedClientId, selectedClientName }: ApprovalManagerProps) {
   const [posts, setPosts] = useState<ApprovalPost[]>([])
-  const [clientId, setClientId] = useState('')
   const [scheduledDate, setScheduledDate] = useState(() => new Date().toISOString().split('T')[0])
   const [platform, setPlatform] = useState<ApprovalPost['platform'] | ''>('')
   const [caption, setCaption] = useState('')
@@ -26,17 +29,13 @@ export function ApprovalManager() {
   const [commentText, setCommentText] = useState('')
 
   useEffect(() => {
-    Promise.all([
-      supabase.from('profiles').select('*').ilike('role', 'client'),
-      supabase.from('approval_posts').select('*').order('created_at', { ascending: false }),
-    ]).then(([clientRes, postRes]) => {
-      setClients((clientRes.data as ClientProfile[]) ?? [])
-      setPosts((postRes.data as ApprovalPost[]) ?? [])
-    })
+    supabase.from('approval_posts').select('*').order('created_at', { ascending: false })
+      .then(({ data }) => setPosts((data as ApprovalPost[]) ?? []))
   }, [])
 
-  const getClientName = (userId: string) =>
-    clients.find((client) => client.id === userId)?.name ?? 'Unknown Client'
+  const filteredPosts = selectedClientId
+    ? posts.filter((post) => post.user_id === selectedClientId)
+    : posts
 
   const syncRequestStatus = async (post: ApprovalPost, status: ApprovalPost['status']) => {
     const { meta } = parseApprovalCaption(post.caption)
@@ -48,6 +47,46 @@ export function ApprovalManager() {
       .update({ status: requestStatus })
       .eq('id', meta.sourceRequestId)
       .eq('user_id', post.user_id)
+  }
+
+  const addPostToCalendar = async (post: ApprovalPost) => {
+    const { caption: visibleCaption, meta } = parseApprovalCaption(post.caption)
+    const scheduledDateValue = meta.requestedDate || new Date().toISOString().split('T')[0]
+
+    const { data: existingPosts, error: existingError } = await supabase
+      .from('scheduled_posts')
+      .select('id')
+      .eq('user_id', post.user_id)
+      .eq('date', scheduledDateValue)
+      .eq('platform', post.platform)
+      .eq('caption', visibleCaption)
+      .limit(1)
+
+    if (existingError) {
+      toast.error('Approved, but the calendar could not be checked for duplicates.')
+      return
+    }
+
+    if (existingPosts && existingPosts.length > 0) {
+      toast.success('This approved item is already on the content calendar.')
+      return
+    }
+
+    const { error: scheduleError } = await supabase.from('scheduled_posts').insert({
+      user_id: post.user_id,
+      date: scheduledDateValue,
+      platform: post.platform,
+      caption: visibleCaption,
+      image_url: post.image_url || buildApprovalImagePlaceholder(meta.title || visibleCaption),
+      status: 'scheduled',
+    })
+
+    if (scheduleError) {
+      toast.error('Approved, but it could not be added to the content calendar.')
+      return
+    }
+
+    toast.success('Approved and added to the content calendar!')
   }
 
   const updatePostStatus = async (post: ApprovalPost, status: ApprovalPost['status'], feedback?: string) => {
@@ -72,22 +111,7 @@ export function ApprovalManager() {
     await syncRequestStatus(post, status)
 
     if (status === 'approved') {
-      const { caption: visibleCaption, meta } = parseApprovalCaption(post.caption)
-      const { error: scheduleError } = await supabase.from('scheduled_posts').insert({
-        user_id: post.user_id,
-        date: meta.requestedDate || new Date().toISOString().split('T')[0],
-        platform: post.platform,
-        caption: visibleCaption,
-        image_url: post.image_url || buildApprovalImagePlaceholder(meta.title || visibleCaption),
-        status: 'scheduled',
-      })
-
-      if (scheduleError) {
-        toast.error('Approved, but it could not be added to the content calendar.')
-        return
-      }
-
-      toast.success('Approved and added to the content calendar!')
+      await addPostToCalendar(post)
       return
     }
 
@@ -108,8 +132,13 @@ export function ApprovalManager() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!clientId || !platform || !caption.trim()) {
-      toast.error('Please select a client, platform, and caption.')
+    if (!selectedClientId) {
+      toast.error('Select a client from the portal header first.')
+      return
+    }
+
+    if (!platform || !caption.trim()) {
+      toast.error('Please choose a platform and enter the caption.')
       return
     }
 
@@ -122,7 +151,7 @@ export function ApprovalManager() {
     const { data, error } = await supabase
       .from('approval_posts')
       .insert({
-        user_id: clientId,
+        user_id: selectedClientId,
         platform,
         caption: encodedCaption,
         image_url: imageUrl.trim() || buildApprovalImagePlaceholder(caption),
@@ -143,7 +172,6 @@ export function ApprovalManager() {
     setCaption('')
     setImageUrl('')
     setPlatform('')
-    setClientId('')
     setScheduledDate(new Date().toISOString().split('T')[0])
   }
 
@@ -155,7 +183,14 @@ export function ApprovalManager() {
 
   return (
     <div className="space-y-8 max-w-4xl">
-      <h2 className="text-2xl font-bold">Approval Manager</h2>
+      <div>
+        <h2 className="text-2xl font-bold">Approval Manager</h2>
+        <p className="text-sm text-muted-foreground">
+          {selectedClientName
+            ? <>Reviewing approvals for <span className="font-medium text-foreground">{selectedClientName}</span>.</>
+            : 'Select a client above to focus the approval queue.'}
+        </p>
+      </div>
 
       <Card>
         <CardHeader><CardTitle>Send New Item to Client Approval</CardTitle></CardHeader>
@@ -163,14 +198,9 @@ export function ApprovalManager() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label>Client</Label>
-              <Select value={clientId} onValueChange={setClientId}>
-                <SelectTrigger><SelectValue placeholder="Select a client" /></SelectTrigger>
-                <SelectContent>
-                  {clients.map((client) => (
-                    <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                {selectedClientName || 'No client selected'}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -203,7 +233,7 @@ export function ApprovalManager() {
               <Input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://..." />
             </div>
 
-            <Button type="submit" disabled={saving} className="w-full">
+            <Button type="submit" disabled={saving || !selectedClientId} className="w-full">
               {saving ? 'Sending...' : 'Send to Client Approval'}
             </Button>
           </form>
@@ -211,8 +241,15 @@ export function ApprovalManager() {
       </Card>
 
       <div className="space-y-3">
-        <h3 className="font-semibold text-lg">Approval Queue ({posts.filter((post) => post.status === 'pending').length} pending)</h3>
-        {posts.map((post) => {
+        <h3 className="font-semibold text-lg">
+          Approval Queue ({filteredPosts.filter((post) => post.status === 'pending').length} pending)
+        </h3>
+
+        {filteredPosts.length === 0 ? (
+          <div className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
+            No approval items for this client yet.
+          </div>
+        ) : filteredPosts.map((post) => {
           const { caption: visibleCaption, meta } = parseApprovalCaption(post.caption)
           const isClientSubmitted = meta.requestedBy === 'client'
 
@@ -228,7 +265,7 @@ export function ApprovalManager() {
                         {isClientSubmitted ? 'Client → Admin Review' : 'Admin → Client Approval'}
                       </Badge>
                     </div>
-                    <p className="text-sm font-medium">{getClientName(post.user_id)}</p>
+                    <p className="text-sm font-medium">{selectedClientName || 'Selected Client'}</p>
                     <p className="text-sm text-muted-foreground whitespace-pre-line">{visibleCaption}</p>
                     {post.created_at && (
                       <p className="text-xs text-muted-foreground">
@@ -276,8 +313,16 @@ export function ApprovalManager() {
                 )}
 
                 {post.status === 'pending' && !isClientSubmitted && (
-                  <div className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-                    Waiting on the client to approve this item before it drops into the content calendar.
+                  <div className="space-y-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <Button onClick={() => updatePostStatus(post, 'approved')} className="gap-2 flex-1">
+                        <CheckCircle size={18} weight="bold" />
+                        Approve for Client
+                      </Button>
+                    </div>
+                    <div className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                      Waiting on the client to approve this item before it drops into the content calendar. You can also approve it on their behalf.
+                    </div>
                   </div>
                 )}
               </CardContent>

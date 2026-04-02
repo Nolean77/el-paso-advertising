@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { ClientProfile } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -9,9 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
 
-export function MetricsEntry() {
-  const [clients, setClients] = useState<ClientProfile[]>([])
-  const [clientId, setClientId] = useState('')
+interface MetricsEntryProps {
+  selectedClientId?: string
+  selectedClientName?: string
+}
+
+export function MetricsEntry({ selectedClientId, selectedClientName }: MetricsEntryProps) {
   const [platform, setPlatform] = useState('')
   const [caption, setCaption] = useState('')
   const [date, setDate] = useState('')
@@ -20,20 +22,22 @@ export function MetricsEntry() {
   const [engagementRate, setEngagementRate] = useState('')
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    supabase.from('profiles').select('*').ilike('role', 'client')
-      .then(({ data }) => setClients((data as ClientProfile[]) ?? []))
-  }, [])
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!clientId || !platform || !caption || !date || !reach || !likes || !engagementRate) {
+
+    if (!selectedClientId) {
+      toast.error('Select a client from the portal header first.')
+      return
+    }
+
+    if (!platform || !caption || !date || !reach || !likes || !engagementRate) {
       toast.error('Please fill in all fields')
       return
     }
+
     setSaving(true)
     const { error } = await supabase.from('performance_metrics').insert({
-      user_id: clientId,
+      user_id: selectedClientId,
       platform,
       caption,
       date,
@@ -42,6 +46,7 @@ export function MetricsEntry() {
       engagement_rate: parseFloat(engagementRate),
     })
     setSaving(false)
+
     if (error) {
       toast.error('Failed: ' + error.message)
     } else {
@@ -55,21 +60,24 @@ export function MetricsEntry() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <h2 className="text-2xl font-bold">Enter Performance Metrics</h2>
+      <div>
+        <h2 className="text-2xl font-bold">Enter Performance Metrics</h2>
+        <p className="text-sm text-muted-foreground">
+          {selectedClientName
+            ? <>Saving metrics for <span className="font-medium text-foreground">{selectedClientName}</span>.</>
+            : 'Select a client above to continue.'}
+        </p>
+      </div>
+
       <Card>
         <CardHeader><CardTitle>New Metric Entry</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label>Client</Label>
-              <Select onValueChange={setClientId}>
-                <SelectTrigger><SelectValue placeholder="Select a client" /></SelectTrigger>
-                <SelectContent>
-                  {clients.map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                {selectedClientName || 'No client selected'}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -79,7 +87,7 @@ export function MetricsEntry() {
               </div>
               <div className="space-y-2">
                 <Label>Platform</Label>
-                <Select onValueChange={setPlatform}>
+                <Select value={platform} onValueChange={setPlatform}>
                   <SelectTrigger><SelectValue placeholder="Platform" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="instagram">Instagram</SelectItem>
@@ -111,7 +119,7 @@ export function MetricsEntry() {
               </div>
             </div>
 
-            <Button type="submit" disabled={saving} className="w-full">
+            <Button type="submit" disabled={saving || !selectedClientId} className="w-full">
               {saving ? 'Saving...' : 'Save Metrics'}
             </Button>
           </form>

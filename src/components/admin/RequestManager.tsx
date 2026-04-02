@@ -1,30 +1,32 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { ContentRequest, ClientProfile } from '@/lib/types'
+import { ContentRequest } from '@/lib/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 
-export function RequestManager() {
+interface RequestManagerProps {
+  selectedClientId?: string
+  selectedClientName?: string
+}
+
+export function RequestManager({ selectedClientId, selectedClientName }: RequestManagerProps) {
   const [requests, setRequests] = useState<ContentRequest[]>([])
-  const [clients, setClients] = useState<ClientProfile[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([
-      supabase.from('content_requests').select('*').order('created_at', { ascending: false }),
-      supabase.from('profiles').select('*').ilike('role', 'client'),
-    ]).then(([reqRes, clientRes]) => {
-      setRequests((reqRes.data as ContentRequest[]) ?? [])
-      setClients((clientRes.data as ClientProfile[]) ?? [])
-      setLoading(false)
-    })
+    supabase.from('content_requests').select('*').order('created_at', { ascending: false })
+      .then(({ data }) => {
+        setRequests((data as ContentRequest[]) ?? [])
+        setLoading(false)
+      })
   }, [])
 
-  const getClientName = (userId: string) =>
-    clients.find(c => c.id === userId)?.name ?? 'Unknown'
+  const filteredRequests = selectedClientId
+    ? requests.filter((request) => request.user_id === selectedClientId)
+    : requests
 
   const updateStatus = async (id: string, status: ContentRequest['status']) => {
     const { error } = await supabase
@@ -50,23 +52,30 @@ export function RequestManager() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">Content Requests</h2>
-        <Badge variant="secondary">{requests.length} total</Badge>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold">Content Requests</h2>
+          <p className="text-sm text-muted-foreground">
+            {selectedClientName
+              ? <>Showing requests for <span className="font-medium text-foreground">{selectedClientName}</span>.</>
+              : 'Select a client above to focus this queue.'}
+          </p>
+        </div>
+        <Badge variant="secondary">{filteredRequests.length} total</Badge>
       </div>
 
-      {requests.length === 0 ? (
-        <p className="text-muted-foreground">No requests yet.</p>
+      {filteredRequests.length === 0 ? (
+        <p className="text-muted-foreground">No requests for this client yet.</p>
       ) : (
         <div className="space-y-3">
-          {requests.map(req => (
+          {filteredRequests.map(req => (
             <Card key={req.id}>
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="font-semibold">{req.title}</p>
                     <p className="text-xs text-muted-foreground">
-                      {getClientName(req.user_id)} · {format(new Date(req.created_at), 'PPP')}
+                      {selectedClientName || 'Selected Client'} · {format(new Date(req.created_at), 'PPP')}
                     </p>
                     <p className="text-sm text-muted-foreground mt-1">{req.description}</p>
                   </div>

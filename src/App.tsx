@@ -125,6 +125,37 @@ function App() {
     const { caption, meta } = parseApprovalCaption(post.caption)
     const scheduledDate = meta.requestedDate || new Date().toISOString().split('T')[0]
 
+    const { data: existingPosts, error: duplicateCheckError } = await supabase
+      .from('scheduled_posts')
+      .select('*')
+      .eq('user_id', post.user_id)
+      .eq('date', scheduledDate)
+      .eq('platform', post.platform)
+      .eq('caption', caption)
+      .limit(1)
+
+    if (duplicateCheckError) {
+      toast.error(currentLanguage === 'en'
+        ? 'The item was approved, but the content calendar could not be checked.'
+        : 'El elemento fue aprobado, pero no se pudo verificar el calendario de contenido.')
+      return
+    }
+
+    if (existingPosts && existingPosts.length > 0) {
+      setScheduledPosts((currentPosts) => {
+        const mergedPosts = [...currentPosts]
+
+        for (const existingPost of existingPosts as ScheduledPost[]) {
+          if (!mergedPosts.some((currentPost) => currentPost.id === existingPost.id)) {
+            mergedPosts.push(existingPost)
+          }
+        }
+
+        return mergedPosts.sort((a, b) => a.date.localeCompare(b.date))
+      })
+      return
+    }
+
     const { data, error } = await supabase
       .from('scheduled_posts')
       .insert([{
@@ -347,7 +378,12 @@ function App() {
             </TabsList>
 
             <TabsContent value="calendar" className="space-y-4">
-              <ContentCalendar posts={scheduledPosts || []} language={currentLanguage} />
+              <ContentCalendar
+                posts={scheduledPosts || []}
+                approvalPosts={approvalPosts || []}
+                onUpdatePost={handleUpdatePost}
+                language={currentLanguage}
+              />
             </TabsContent>
 
             <TabsContent value="approvals" className="space-y-4">

@@ -3,19 +3,36 @@ import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Users, CalendarDays, CheckSquare, MessageSquare } from 'lucide-react'
 
-export function AdminDashboard() {
+interface AdminDashboardProps {
+  selectedClientId?: string
+  selectedClientName?: string
+}
+
+export function AdminDashboard({ selectedClientId, selectedClientName }: AdminDashboardProps) {
   const [counts, setCounts] = useState({
     clients: 0, posts: 0, pending: 0, requests: 0
   })
 
   useEffect(() => {
     async function load() {
+      const clientsQuery = supabase.from('profiles').select('id', { count: 'exact' }).ilike('role', 'client')
+      const postsQuery = supabase.from('scheduled_posts').select('id', { count: 'exact' })
+      const pendingQuery = supabase.from('approval_posts').select('id', { count: 'exact' }).eq('status', 'pending')
+      const requestsQuery = supabase.from('content_requests').select('id', { count: 'exact' }).eq('status', 'pending')
+
+      if (selectedClientId) {
+        postsQuery.eq('user_id', selectedClientId)
+        pendingQuery.eq('user_id', selectedClientId)
+        requestsQuery.eq('user_id', selectedClientId)
+      }
+
       const [clients, posts, pending, requests] = await Promise.all([
-        supabase.from('profiles').select('id', { count: 'exact' }).ilike('role', 'client'),
-        supabase.from('scheduled_posts').select('id', { count: 'exact' }),
-        supabase.from('approval_posts').select('id', { count: 'exact' }).eq('status', 'pending'),
-        supabase.from('content_requests').select('id', { count: 'exact' }).eq('status', 'pending'),
+        clientsQuery,
+        postsQuery,
+        pendingQuery,
+        requestsQuery,
       ])
+
       setCounts({
         clients:  clients.count  ?? 0,
         posts:    posts.count    ?? 0,
@@ -23,8 +40,9 @@ export function AdminDashboard() {
         requests: requests.count ?? 0,
       })
     }
+
     load()
-  }, [])
+  }, [selectedClientId])
 
   const stats = [
     { label: 'Active Clients',    value: counts.clients,  icon: Users },
@@ -35,7 +53,15 @@ export function AdminDashboard() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold">Dashboard</h2>
+      <div>
+        <h2 className="text-2xl font-bold">Dashboard</h2>
+        <p className="text-sm text-muted-foreground">
+          {selectedClientName
+            ? <>Currently viewing <span className="font-medium text-foreground">{selectedClientName}</span>.</>
+            : 'Select a client above to focus the admin workspace.'}
+        </p>
+      </div>
+
       <div className="grid grid-cols-2 gap-4">
         {stats.map(({ label, value, icon: Icon }) => (
           <Card key={label}>

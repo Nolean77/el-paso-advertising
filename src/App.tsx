@@ -35,6 +35,8 @@ function App() {
           .eq('id', session.user.id)
           .single()
           .then(({ data: profile }) => {
+            console.log('RAW PROFILE FROM DB:', profile)
+            console.log('ROLE VALUE:', profile?.role)
             setUser({
               id: session.user.id,
               email: session.user.email!,
@@ -56,6 +58,8 @@ function App() {
           .eq('id', session.user.id)
           .single()
           .then(({ data: profile }) => {
+            console.log('RAW PROFILE FROM DB:', profile)
+            console.log('ROLE VALUE:', profile?.role)
             setUser({
               id: session.user.id,
               email: session.user.email!,

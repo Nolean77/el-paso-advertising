@@ -39,7 +39,11 @@ async function handleOAuthCallback(request, env) {
   try {
     const shortLivedToken = await exchangeCodeForToken(env, code)
     const longLivedUserToken = await exchangeForLongLivedUserToken(env, shortLivedToken.access_token)
-    const tokenExpiresAt = new Date(Date.now() + (longLivedUserToken.expires_in || 0) * 1000).toISOString()
+      // Validate expires_in: use a default of 5,184,000 seconds (60 days) if missing or invalid
+      const expiresInSeconds = typeof longLivedUserToken.expires_in === 'number' && longLivedUserToken.expires_in > 0
+        ? longLivedUserToken.expires_in
+        : 5184000 // 60 days
+      const tokenExpiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString()
 
     const pages = await getUserPages(longLivedUserToken.access_token)
     if (!Array.isArray(pages) || pages.length === 0) {
@@ -427,14 +431,20 @@ async function tryRefreshConnectionToken(env, connection, post) {
   try {
     console.log('Attempting to refresh token for post', post.id, '| connection ID:', connection.id)
     const refreshed = await exchangeForLongLivedUserToken(env, connection.page_access_token)
-    console.log('Token exchange response for post', post.id, '| has access_token:', !!refreshed?.access_token)
+      console.log('Token exchange response for post', post.id, '| has access_token:', !!refreshed?.access_token, '| expires_in:', refreshed?.expires_in)
     
     if (!refreshed?.access_token) {
       console.log('Token exchange did not return access_token for post', post.id)
       return connection
     }
 
-    const tokenExpiresAt = new Date(Date.now() + (refreshed.expires_in || 0) * 1000).toISOString()
+      // Validate expires_in: use a default of 5,184,000 seconds (60 days) if missing or invalid
+      const expiresInSeconds = typeof refreshed.expires_in === 'number' && refreshed.expires_in > 0 
+        ? refreshed.expires_in 
+        : 5184000 // 60 days
+      console.log('Using expires_in for token:', expiresInSeconds, 'seconds')
+    
+      const tokenExpiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString()
     const updated = {
       page_access_token: refreshed.access_token,
       token_expires_at: tokenExpiresAt,

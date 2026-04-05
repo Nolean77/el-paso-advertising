@@ -2,13 +2,15 @@ const META_API_VERSION = 'v19.0'
 const META_GRAPH_BASE = `https://graph.facebook.com/${META_API_VERSION}`
 const META_DIALOG_REDIRECT_PATH = '/oauth/meta/callback'
 const BLOCKED_FACEBOOK_PAGE_IDS = new Set(['433627129826098'])
-const TOKEN_RECONNECT_REQUIRED_MESSAGE = 'Meta access token is expired. Reconnect this client account.'
-const TOKEN_REFRESH_FAILED_MESSAGE = 'Meta token refresh failed. Reconnect this client account.'
-const NO_ACTIVE_CONNECTION_MESSAGE = 'No active Meta connection found for this client.'
-const NO_INSTAGRAM_ACCOUNT_MESSAGE = 'No connected Instagram Business account for this client.'
-const INSTAGRAM_MEDIA_REQUIRED_MESSAGE = 'Instagram requires an image or video URL.'
-const FACEBOOK_DAILY_CAP_MESSAGE = 'Daily Facebook posting cap reached for this client page.'
-const INSTAGRAM_DAILY_CAP_MESSAGE = 'Daily Instagram posting cap reached for this client page.'
+const MESSAGE = {
+  tokenReconnectRequired: 'Meta access token is expired. Reconnect this client account.',
+  tokenRefreshFailed: 'Meta token refresh failed. Reconnect this client account.',
+  noActiveConnection: 'No active Meta connection found for this client.',
+  noInstagramAccount: 'No connected Instagram Business account for this client.',
+  instagramMediaRequired: 'Instagram requires an image or video URL.',
+  facebookDailyCap: 'Daily Facebook posting cap reached for this client page.',
+  instagramDailyCap: 'Daily Instagram posting cap reached for this client page.',
+}
 
 export default {
   async fetch(request, env) {
@@ -152,7 +154,7 @@ async function publishPost(env, post) {
         client_id: post.user_id,
         platform: 'facebook',
         status: 'skipped',
-        error_message: NO_ACTIVE_CONNECTION_MESSAGE,
+        error_message: MESSAGE.noActiveConnection,
       })
     }
 
@@ -162,7 +164,7 @@ async function publishPost(env, post) {
         client_id: post.user_id,
         platform: 'instagram',
         status: 'skipped',
-        error_message: NO_ACTIVE_CONNECTION_MESSAGE,
+        error_message: MESSAGE.noActiveConnection,
       })
     }
 
@@ -190,7 +192,7 @@ async function publishPost(env, post) {
             client_id: post.user_id,
             platform: 'facebook',
             status: 'failed',
-            error_message: TOKEN_RECONNECT_REQUIRED_MESSAGE,
+            error_message: MESSAGE.tokenReconnectRequired,
           })
         }
 
@@ -200,12 +202,12 @@ async function publishPost(env, post) {
             client_id: post.user_id,
             platform: 'instagram',
             status: 'failed',
-            error_message: TOKEN_RECONNECT_REQUIRED_MESSAGE,
+            error_message: MESSAGE.tokenReconnectRequired,
           })
         }
 
         await updateScheduledPost(env, post.id, {
-          post_error: TOKEN_RECONNECT_REQUIRED_MESSAGE,
+          post_error: MESSAGE.tokenReconnectRequired,
         })
         return
       }
@@ -223,7 +225,7 @@ async function publishPost(env, post) {
         client_id: post.user_id,
         platform: 'instagram',
         status: 'skipped',
-        error_message: NO_INSTAGRAM_ACCOUNT_MESSAGE,
+        error_message: MESSAGE.noInstagramAccount,
       })
       return
     }
@@ -234,10 +236,10 @@ async function publishPost(env, post) {
         client_id: post.user_id,
         platform: 'instagram',
         status: 'skipped',
-        error_message: INSTAGRAM_MEDIA_REQUIRED_MESSAGE,
+        error_message: MESSAGE.instagramMediaRequired,
       })
       await updateScheduledPost(env, post.id, {
-        post_error: INSTAGRAM_MEDIA_REQUIRED_MESSAGE,
+        post_error: MESSAGE.instagramMediaRequired,
       })
       return
     }
@@ -254,7 +256,7 @@ async function publishToFacebook(env, post, connection) {
       client_id: post.user_id,
       platform: 'facebook',
       status: 'skipped',
-      error_message: FACEBOOK_DAILY_CAP_MESSAGE,
+      error_message: MESSAGE.facebookDailyCap,
     })
     return
   }
@@ -333,7 +335,7 @@ async function publishToInstagram(env, post, connection) {
       client_id: post.user_id,
       platform: 'instagram',
       status: 'skipped',
-      error_message: INSTAGRAM_DAILY_CAP_MESSAGE,
+      error_message: MESSAGE.instagramDailyCap,
     })
     return
   }
@@ -465,7 +467,7 @@ async function tryRefreshConnectionToken(env, connection, post) {
         client_id: post.user_id,
         platform: 'facebook',
         status: 'skipped',
-        error_message: TOKEN_REFRESH_FAILED_MESSAGE,
+        error_message: MESSAGE.tokenRefreshFailed,
       })
     }
 
@@ -475,12 +477,12 @@ async function tryRefreshConnectionToken(env, connection, post) {
         client_id: post.user_id,
         platform: 'instagram',
         status: 'skipped',
-        error_message: TOKEN_REFRESH_FAILED_MESSAGE,
+        error_message: MESSAGE.tokenRefreshFailed,
       })
     }
 
     await updateScheduledPost(env, post.id, {
-      post_error: TOKEN_REFRESH_FAILED_MESSAGE,
+      post_error: MESSAGE.tokenRefreshFailed,
     })
 
     return connection

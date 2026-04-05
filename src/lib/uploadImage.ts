@@ -19,13 +19,13 @@ export async function uploadImageFile(
   userId: string,
   fileName,
   bucket = 'post-images'
-): Promise<string | null> {
-  try {
-    const mimeType = file.type || 'image/jpeg'
-    const fileExt = getFileExtension(file.type, fileName)
-    const timestamp = Date.now()
-    const filePath = `${userId}/${timestamp}.${fileExt}`
+): Promise<string> {
+  const mimeType = file.type || 'image/jpeg'
+  const fileExt = getFileExtension(file.type, fileName)
+  const timestamp = Date.now()
 
+  const tryUpload = async (ownerId: string) => {
+    const filePath = `${ownerId}/${timestamp}.${fileExt}`
     const { data, error } = await supabase.storage
       .from(bucket)
       .upload(filePath, file, {
@@ -34,8 +34,7 @@ export async function uploadImageFile(
       })
 
     if (error) {
-      console.error('Upload error:', error)
-      return null
+      throw new Error(error.message || 'Storage upload failed')
     }
 
     const { data: publicUrlData } = supabase.storage
@@ -43,8 +42,24 @@ export async function uploadImageFile(
       .getPublicUrl(data.path)
 
     return publicUrlData.publicUrl
-  } catch (error) {
-    console.error('Upload error:', error)
-    return null
+  }
+
+  try {
+    return await tryUpload(userId)
+  } catch (primaryError) {
+    const { data: authData } = await supabase.auth.getUser()
+    const authUserId = authData?.user?.id
+
+    if (authUserId && authUserId !== userId) {
+      try {
+        return await tryUpload(authUserId)
+      } catch (fallbackError) {
+        throw new Error(
+          `Upload failed for both client and current user paths. Primary: ${primaryError instanceof Error ? primaryError.message : 'unknown'}. Fallback: ${fallbackError instanceof Error ? fallbackError.message : 'unknown'}`
+        )
+      }
+    }
+
+    throw new Error(primaryError instanceof Error ? primaryError.message : 'Upload failed')
   }
 }

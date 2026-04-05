@@ -60,15 +60,12 @@ export function ImageUploadField({
       }
 
       const publicUrl = await uploadImageFile(uploadFile, uploadUserId, file.name, 'post-images')
-      if (!publicUrl) {
-        toast.error('Unable to upload that image right now.')
-        return
-      }
 
       onChange(publicUrl)
       toast.success('Image uploaded successfully.')
-    } catch {
-      toast.error('Unable to process that image right now.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to process that image right now.'
+      toast.error(`Unable to upload image: ${message}`)
     } finally {
       setIsUploading(false)
     }

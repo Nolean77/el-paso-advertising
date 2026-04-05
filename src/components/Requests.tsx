@@ -71,14 +71,11 @@ export function Requests({ requests, onSubmitRequest, userId, language }: Reques
         }
 
         const publicUrl = await uploadImageFile(uploadFile, userId, file.name, 'post-images')
-        if (!publicUrl) {
-          toast.error(language === 'en' ? 'Failed to upload image' : 'Error al subir la imagen')
-          continue
-        }
 
         setReferenceImages((prev) => [...prev, publicUrl])
-      } catch {
-        toast.error(language === 'en' ? 'Failed to upload image' : 'Error al subir la imagen')
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : ''
+        toast.error(language === 'en' ? `Failed to upload image${detail ? `: ${detail}` : ''}` : `Error al subir la imagen${detail ? `: ${detail}` : ''}`)
       }
     }
   }

@@ -54,9 +54,14 @@ export function ImageUploadField({
 
       if (file.size > FILE_SIZE_LIMITS.warning) {
         toast.info(`Compressing image from ${formatFileSize(file.size)}...`)
-        const compressed = await compressImage(file)
-        uploadFile = compressed.file
-        toast.success(`Image compressed to ${formatFileSize(compressed.compressedSize)}.`)
+        try {
+          const compressed = await compressImage(file)
+          uploadFile = compressed.file
+          toast.success(`Image compressed to ${formatFileSize(compressed.compressedSize)}.`)
+        } catch (compressionError) {
+          console.warn('Compression failed, uploading original image instead.', compressionError)
+          toast.info('Could not compress image. Uploading original file instead.')
+        }
       }
 
       const publicUrl = await uploadImageFile(uploadFile, uploadUserId, file.name, 'post-images')

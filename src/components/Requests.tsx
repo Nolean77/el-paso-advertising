@@ -60,14 +60,19 @@ export function Requests({ requests, onSubmitRequest, userId, language }: Reques
 
         if (file.size > FILE_SIZE_LIMITS.warning) {
           toast.info(t.compressionWarning.replace('{size}', formatFileSize(file.size)))
-          const compressed = await compressImage(file)
-          uploadFile = compressed.file
-          toast.success(
-            t.compressionSuccess
-              .replace('{original}', formatFileSize(compressed.originalSize))
-              .replace('{compressed}', formatFileSize(compressed.compressedSize))
-              .replace('{ratio}', compressed.compressionRatio.toFixed(0))
-          )
+          try {
+            const compressed = await compressImage(file)
+            uploadFile = compressed.file
+            toast.success(
+              t.compressionSuccess
+                .replace('{original}', formatFileSize(compressed.originalSize))
+                .replace('{compressed}', formatFileSize(compressed.compressedSize))
+                .replace('{ratio}', compressed.compressionRatio.toFixed(0))
+            )
+          } catch (compressionError) {
+            console.warn('Compression failed, uploading original image instead.', compressionError)
+            toast.info(language === 'en' ? 'Could not compress image. Uploading original file.' : 'No se pudo comprimir la imagen. Subiendo el archivo original.')
+          }
         }
 
         const publicUrl = await uploadImageFile(uploadFile, userId, file.name, 'post-images')

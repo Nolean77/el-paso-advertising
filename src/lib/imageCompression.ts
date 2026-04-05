@@ -18,12 +18,47 @@ export function formatFileSize(bytes: number): string {
   return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`
 }
 
-async function loadImageBitmap(file: File): Promise<ImageBitmap> {
-  return createImageBitmap(file)
+type LoadedImage = {
+  width: number
+  height: number
+  drawTo: (ctx: CanvasRenderingContext2D, width: number, height: number) => void
+  cleanup: () => void
+}
+
+async function loadImageBitmap(file: File): Promise<LoadedImage> {
+  if (typeof createImageBitmap === 'function') {
+    const bitmap = await createImageBitmap(file)
+    return {
+      width: bitmap.width,
+      height: bitmap.height,
+      drawTo: (ctx, width, height) => ctx.drawImage(bitmap, 0, 0, width, height),
+      cleanup: () => bitmap.close(),
+    }
+  }
+
+  const objectUrl = URL.createObjectURL(file)
+  try {
+    const imageElement = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image()
+      image.onload = () => resolve(image)
+      image.onerror = () => reject(new Error('Failed to load image'))
+      image.src = objectUrl
+    })
+
+    return {
+      width: imageElement.naturalWidth || imageElement.width,
+      height: imageElement.naturalHeight || imageElement.height,
+      drawTo: (ctx, width, height) => ctx.drawImage(imageElement, 0, 0, width, height),
+      cleanup: () => URL.revokeObjectURL(objectUrl),
+    }
+  } catch (error) {
+    URL.revokeObjectURL(objectUrl)
+    throw error
+  }
 }
 
 async function compressAtQuality(
-  image: ImageBitmap,
+  image: LoadedImage,
   mimeType: string,
   maxWidthOrHeight: number,
   quality: number
@@ -51,7 +86,7 @@ async function compressAtQuality(
 
   ctx.fillStyle = '#FFFFFF'
   ctx.fillRect(0, 0, width, height)
-  ctx.drawImage(image, 0, 0, width, height)
+  image.drawTo(ctx, width, height)
 
   const output = await new Promise<Blob | null>((resolve) => {
     canvas.toBlob(resolve, mimeType, quality)
@@ -88,6 +123,6 @@ export async function compressImage(file: File): Promise<CompressionResult> {
       compressionRatio: originalSize > 0 ? (1 - compressed.size / originalSize) * 100 : 0,
     }
   } finally {
-    image.close()
+    image.cleanup()
   }
 }

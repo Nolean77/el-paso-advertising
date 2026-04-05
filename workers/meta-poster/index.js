@@ -55,41 +55,46 @@ async function handleOAuthCallback(request, env) {
 }
 
 async function runScheduledPoster(env) {
-  const nowIso = new Date().toISOString()
-  const posts = await querySupabase(env, '/rest/v1/scheduled_posts', {
-    select: [
-      'id',
-      'user_id',
-      'platform',
-      'caption',
-      'image_url',
-      'status',
-      'scheduled_at',
-      'auto_post_enabled',
-      'posted_to_facebook',
-      'posted_to_instagram',
-      'post_type',
-    ].join(','),
-    status: 'eq.scheduled',
-    auto_post_enabled: 'eq.true',
-    scheduled_at: `lte.${nowIso}`,
-    platform: 'in.(facebook,instagram)',
-    order: 'scheduled_at.asc',
-    limit: '100',
-  })
+  console.log('runScheduledPoster started')
+  try {
+    const nowIso = new Date().toISOString()
+    const posts = await querySupabase(env, '/rest/v1/scheduled_posts', {
+      select: [
+        'id',
+        'user_id',
+        'platform',
+        'caption',
+        'image_url',
+        'status',
+        'scheduled_at',
+        'auto_post_enabled',
+        'posted_to_facebook',
+        'posted_to_instagram',
+        'post_type',
+      ].join(','),
+      status: 'eq.scheduled',
+      auto_post_enabled: 'eq.true',
+      scheduled_at: `lte.${nowIso}`,
+      platform: 'in.(facebook,instagram)',
+      order: 'scheduled_at.asc',
+      limit: '100',
+    })
 
-  console.log('Found posts to process:', posts?.length ?? 0)
+    console.log('Found posts to process:', posts?.length ?? 0)
 
-  if (!Array.isArray(posts) || posts.length === 0) {
-    return
-  }
+    if (!Array.isArray(posts) || posts.length === 0) {
+      return
+    }
 
-  const filteredPosts = posts.filter((p) => !p.posted_to_facebook || !p.posted_to_instagram)
-  console.log('Posts after platform-status filter:', filteredPosts.length)
+    const filteredPosts = posts.filter((p) => !p.posted_to_facebook || !p.posted_to_instagram)
+    console.log('Posts after platform-status filter:', filteredPosts.length)
 
-  for (const post of filteredPosts) {
-    console.log('Processing post ID:', post.id, '| User ID:', post.user_id, '| Platform:', post.platform)
-    await publishPost(env, post)
+    for (const post of filteredPosts) {
+      console.log('Processing post ID:', post.id, '| User ID:', post.user_id, '| Platform:', post.platform)
+      await publishPost(env, post)
+    }
+  } catch (err) {
+    console.error('runScheduledPoster error:', err?.message || err)
   }
 }
 

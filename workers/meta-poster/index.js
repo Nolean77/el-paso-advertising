@@ -124,7 +124,14 @@ async function publishPost(env, post) {
   const needsInstagram = !post.posted_to_instagram
 
   const connection = await getActiveMetaConnection(env, post.user_id)
-  console.log('Meta connection found for post', post.id, ':', connection ? `Yes (ID: ${connection.id})` : 'No')
+  console.log(
+    'Meta connection found for post',
+    post.id,
+    ':',
+    connection
+      ? `Yes (ID: ${connection.id}, Page: ${connection.facebook_page_name || connection.facebook_page_id})`
+      : 'No'
+  )
 
   if (!connection) {
     if (needsFacebook) {
@@ -461,6 +468,9 @@ async function updateMetaConnectionsForClient(env, clientId, pages, tokenExpires
     is_active: false,
   })
 
+  // Choose one deterministic page to avoid random routing when a user owns multiple pages.
+  const preferredPage = pages.find((page) => page.instagram_business_account?.id) || pages[0]
+
   for (const page of pages) {
     await saveMetaConnection(env, {
       client_id: clientId,
@@ -470,7 +480,7 @@ async function updateMetaConnectionsForClient(env, clientId, pages, tokenExpires
       page_access_token: page.access_token,
       token_expires_at: tokenExpiresAt,
       connected_at: new Date().toISOString(),
-      is_active: true,
+      is_active: page.id === preferredPage?.id,
     })
   }
 }

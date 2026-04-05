@@ -58,6 +58,29 @@ async function runScheduledPoster(env) {
   console.log('runScheduledPoster started')
   try {
     const nowIso = new Date().toISOString()
+
+    const debugUrl = new URL('/rest/v1/scheduled_posts', env.SUPABASE_URL)
+    debugUrl.searchParams.set('select', [
+      'id',
+      'user_id',
+      'platform',
+      'caption',
+      'image_url',
+      'status',
+      'scheduled_at',
+      'auto_post_enabled',
+      'posted_to_facebook',
+      'posted_to_instagram',
+      'post_type',
+    ].join(','))
+    debugUrl.searchParams.set('status', 'eq.scheduled')
+    debugUrl.searchParams.set('auto_post_enabled', 'eq.true')
+    debugUrl.searchParams.set('scheduled_at', `lte.${nowIso}`)
+    debugUrl.searchParams.set('platform', 'in.(facebook,instagram)')
+    debugUrl.searchParams.set('order', 'scheduled_at.asc')
+    debugUrl.searchParams.set('limit', '100')
+    console.log('Querying Supabase URL:', debugUrl.toString())
+
     const posts = await querySupabase(env, '/rest/v1/scheduled_posts', {
       select: [
         'id',

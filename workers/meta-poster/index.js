@@ -79,11 +79,14 @@ async function runScheduledPoster(env) {
     limit: '100',
   })
 
+  console.log('Found posts to process:', posts?.length ?? 0)
+
   if (!Array.isArray(posts) || posts.length === 0) {
     return
   }
 
   for (const post of posts) {
+    console.log('Processing post ID:', post.id, '| User ID:', post.user_id, '| Platform:', post.platform)
     await publishPost(env, post)
   }
 }
@@ -93,6 +96,7 @@ async function publishPost(env, post) {
   const needsInstagram = !post.posted_to_instagram
 
   const connection = await getActiveMetaConnection(env, post.user_id)
+  console.log('Meta connection found for post', post.id, ':', connection ? `Yes (ID: ${connection.id})` : 'No')
 
   if (!connection) {
     if (needsFacebook) {
@@ -229,6 +233,7 @@ async function publishToFacebook(env, post, connection) {
       body: payload,
     })
     const result = await response.json()
+    console.log('Facebook API response for post', post.id, '| Status:', response.status, '| Result:', JSON.stringify(result))
 
     if (!response.ok || result.error) {
       throw new Error(result.error?.message || 'Facebook post failed.')
@@ -250,6 +255,7 @@ async function publishToFacebook(env, post, connection) {
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Facebook post failed.'
+    console.error('Error publishing to Facebook for post', post.id, ':', message)
     await updateScheduledPost(env, post.id, { post_error: message })
     await insertPostLog(env, {
       post_id: post.id,
@@ -294,6 +300,7 @@ async function publishToInstagram(env, post, connection) {
       body: containerPayload,
     })
     const containerData = await containerRes.json()
+    console.log('Instagram media container API response for post', post.id, '| Status:', containerRes.status, '| Result:', JSON.stringify(containerData))
 
     if (!containerRes.ok || containerData.error) {
       throw new Error(containerData.error?.message || 'Instagram media container failed.')
@@ -309,6 +316,7 @@ async function publishToInstagram(env, post, connection) {
       body: publishPayload,
     })
     const publishData = await publishRes.json()
+    console.log('Instagram media publish API response for post', post.id, '| Status:', publishRes.status, '| Result:', JSON.stringify(publishData))
 
     if (!publishRes.ok || publishData.error) {
       throw new Error(publishData.error?.message || 'Instagram publish failed.')
@@ -330,6 +338,7 @@ async function publishToInstagram(env, post, connection) {
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Instagram post failed.'
+    console.error('Error publishing to Instagram for post', post.id, ':', message)
     await updateScheduledPost(env, post.id, { post_error: message })
     await insertPostLog(env, {
       post_id: post.id,
@@ -380,7 +389,9 @@ async function tryRefreshConnectionToken(env, connection, post) {
       ...connection,
       ...updated,
     }
-  } catch {
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Token refresh failed'
+    console.error('Error refreshing Meta token for post', post.id, ':', errorMessage)
     if (!post.posted_to_facebook) {
       await insertPostLog(env, {
         post_id: post.id,

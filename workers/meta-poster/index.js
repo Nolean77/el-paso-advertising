@@ -1,6 +1,7 @@
 const META_API_VERSION = 'v19.0'
 const META_GRAPH_BASE = `https://graph.facebook.com/${META_API_VERSION}`
 const META_DIALOG_REDIRECT_PATH = '/oauth/meta/callback'
+const BLOCKED_FACEBOOK_PAGE_IDS = new Set(['433627129826098'])
 
 export default {
   async fetch(request, env) {
@@ -464,14 +465,23 @@ async function getActiveMetaConnection(env, clientId) {
 }
 
 async function updateMetaConnectionsForClient(env, clientId, pages, tokenExpiresAt) {
+  const previousActive = await getActiveMetaConnection(env, clientId)
+  const allowedPages = (pages || []).filter((page) => !BLOCKED_FACEBOOK_PAGE_IDS.has(String(page.id)))
+
+  if (!Array.isArray(allowedPages) || allowedPages.length === 0) {
+    throw new Error('No allowed Facebook pages are available for this client account.')
+  }
+
   await updateSupabase(env, `/rest/v1/meta_connections?client_id=eq.${encodeURIComponent(clientId)}`, {
     is_active: false,
   })
 
-  // Choose one deterministic page to avoid random routing when a user owns multiple pages.
-  const preferredPage = pages.find((page) => page.instagram_business_account?.id) || pages[0]
+  const preferredPage =
+    allowedPages.find((page) => String(page.id) === String(previousActive?.facebook_page_id)) ||
+    allowedPages.find((page) => page.instagram_business_account?.id) ||
+    allowedPages[0]
 
-  for (const page of pages) {
+  for (const page of allowedPages) {
     await saveMetaConnection(env, {
       client_id: clientId,
       facebook_page_id: page.id,
@@ -480,7 +490,7 @@ async function updateMetaConnectionsForClient(env, clientId, pages, tokenExpires
       page_access_token: page.access_token,
       token_expires_at: tokenExpiresAt,
       connected_at: new Date().toISOString(),
-      is_active: page.id === preferredPage?.id,
+      is_active: String(page.id) === String(preferredPage?.id),
     })
   }
 }
@@ -608,3 +618,4 @@ async function writeSupabase(env, path, method, payload, extraHeaders = {}) {
 
   return null
 }
+

@@ -76,7 +76,6 @@ async function runScheduledPoster(env) {
     debugUrl.searchParams.set('status', 'eq.scheduled')
     debugUrl.searchParams.set('auto_post_enabled', 'eq.true')
     debugUrl.searchParams.set('scheduled_at', `lte.${nowIso}`)
-    debugUrl.searchParams.set('platform', 'in.(facebook,instagram)')
     debugUrl.searchParams.set('order', 'scheduled_at.asc')
     debugUrl.searchParams.set('limit', '100')
     console.log('Querying Supabase URL:', debugUrl.toString())
@@ -98,7 +97,6 @@ async function runScheduledPoster(env) {
       status: 'eq.scheduled',
       auto_post_enabled: 'eq.true',
       scheduled_at: `lte.${nowIso}`,
-      platform: 'in.(facebook,instagram)',
       order: 'scheduled_at.asc',
       limit: '100',
     })
@@ -109,8 +107,8 @@ async function runScheduledPoster(env) {
       return
     }
 
-    const filteredPosts = posts.filter((p) => !p.posted_to_facebook || !p.posted_to_instagram)
-    console.log('Posts after platform-status filter:', filteredPosts.length)
+    const filteredPosts = posts.filter((p) => p.platform === 'facebook' || p.platform === 'instagram')
+    console.log('Posts after platform filter:', filteredPosts.length)
 
     for (const post of filteredPosts) {
       console.log('Processing post ID:', post.id, '| User ID:', post.user_id, '| Platform:', post.platform)

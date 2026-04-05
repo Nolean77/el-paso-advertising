@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { compressImage, FILE_SIZE_LIMITS, formatFileSize } from '@/lib/imageCompression'
+import { FILE_SIZE_LIMITS } from '@/lib/imageCompression'
 import { uploadImageFile } from '@/lib/uploadImage'
 
 interface ImageUploadFieldProps {
@@ -50,21 +50,6 @@ export function ImageUploadField({
     setIsUploading(true)
 
     try {
-      if (file.size > FILE_SIZE_LIMITS.warning) {
-        toast.info(`Compressing image from ${formatFileSize(file.size)}...`)
-        const compressed = await compressImage(file)
-
-        const publicUrl = await uploadImageFile(compressed.file, uploadUserId, file.name, 'post-images')
-        if (!publicUrl) {
-          toast.error('Unable to upload that image right now.')
-          return
-        }
-
-        onChange(publicUrl)
-        toast.success(`Image compressed to ${formatFileSize(compressed.compressedSize)} and uploaded.`)
-        return
-      }
-
       const publicUrl = await uploadImageFile(file, uploadUserId, file.name, 'post-images')
       if (!publicUrl) {
         toast.error('Unable to upload that image right now.')
@@ -95,8 +80,6 @@ export function ImageUploadField({
     setIsDragging(false)
     handleFileSelection(event.dataTransfer.files)
   }
-
-  const manualUrlValue = value.startsWith('data:') ? '' : value
 
   return (
     <div className="space-y-3">
@@ -132,7 +115,7 @@ export function ImageUploadField({
             <p className="text-xs text-muted-foreground">or click to choose one from your device</p>
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               <Warning size={14} weight="bold" className="text-yellow-500" />
-              <span>Max 10MB • Large images will be compressed automatically</span>
+              <span>Max 10MB</span>
             </div>
           </div>
         )}
@@ -166,7 +149,7 @@ export function ImageUploadField({
         <div className="relative">
           <ImageIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
-            value={manualUrlValue}
+            value={value}
             onChange={(event) => onChange(event.target.value)}
             placeholder={urlPlaceholder}
             className="pl-9"

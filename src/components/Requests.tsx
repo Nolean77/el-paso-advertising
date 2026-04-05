@@ -13,7 +13,7 @@ import type { ContentRequest, RequestSubmission } from '@/lib/types'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { compressImage, formatFileSize, FILE_SIZE_LIMITS } from '@/lib/imageCompression'
+import { FILE_SIZE_LIMITS } from '@/lib/imageCompression'
 import { uploadImageFile } from '@/lib/uploadImage'
 
 interface RequestsProps {
@@ -55,40 +55,16 @@ export function Requests({ requests, onSubmitRequest, userId, language }: Reques
         continue
       }
 
-      if (file.size > FILE_SIZE_LIMITS.warning) {
-        toast.info(t.compressionWarning.replace('{size}', formatFileSize(file.size)))
-        
-        try {
-          const compressed = await compressImage(file)
-          const publicUrl = await uploadImageFile(compressed.file, userId, file.name, 'post-images')
-          if (!publicUrl) {
-            toast.error(language === 'en' ? 'Failed to upload image' : 'Error al subir la imagen')
-            continue
-          }
-
-          setReferenceImages((prev) => [...prev, publicUrl])
-          
-          toast.success(
-            t.compressionSuccess
-              .replace('{original}', formatFileSize(compressed.originalSize))
-              .replace('{compressed}', formatFileSize(compressed.compressedSize))
-              .replace('{ratio}', compressed.compressionRatio.toFixed(0))
-          )
-        } catch {
-          toast.error(language === 'en' ? 'Failed to process image' : 'Error al procesar la imagen')
-        }
-      } else {
-        try {
-          const publicUrl = await uploadImageFile(file, userId, file.name, 'post-images')
-          if (!publicUrl) {
-            toast.error(language === 'en' ? 'Failed to upload image' : 'Error al subir la imagen')
-            continue
-          }
-
-          setReferenceImages((prev) => [...prev, publicUrl])
-        } catch {
+      try {
+        const publicUrl = await uploadImageFile(file, userId, file.name, 'post-images')
+        if (!publicUrl) {
           toast.error(language === 'en' ? 'Failed to upload image' : 'Error al subir la imagen')
+          continue
         }
+
+        setReferenceImages((prev) => [...prev, publicUrl])
+      } catch {
+        toast.error(language === 'en' ? 'Failed to upload image' : 'Error al subir la imagen')
       }
     }
   }
@@ -261,8 +237,8 @@ export function Requests({ requests, onSubmitRequest, userId, language }: Reques
                       <Warning size={14} weight="bold" className="text-yellow-500" />
                       <span>
                         {language === 'en' 
-                          ? `Max 10MB per file • Auto-compression over 5MB` 
-                          : `Máx 10MB por archivo • Auto-compresión sobre 5MB`}
+                          ? `Max 10MB per file` 
+                          : `Máx 10MB por archivo`}
                       </span>
                     </div>
                   </div>

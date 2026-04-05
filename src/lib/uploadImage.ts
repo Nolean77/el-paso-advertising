@@ -1,16 +1,7 @@
 import { supabase } from './supabase'
 
-function sanitizeFileName(fileName: string): string {
-  return fileName
-    .toLowerCase()
-    .replace(/\.[^.]+$/, '')
-    .replace(/[^a-z0-9-_]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '') || 'image'
-}
-
-function getFileExtension(contentType: string | undefined, fileName: string): string {
-  const fromName = fileName.split('.').pop()?.toLowerCase()
+function getFileExtension(contentType: string | undefined, fileName?: string): string {
+  const fromName = fileName?.split('.').pop()?.toLowerCase()
   if (fromName && /^[a-z0-9]+$/.test(fromName)) {
     return fromName
   }
@@ -26,15 +17,14 @@ function getFileExtension(contentType: string | undefined, fileName: string): st
 export async function uploadImageFile(
   file: Blob,
   userId: string,
-  fileName = 'upload.jpg',
+  fileName,
   bucket = 'post-images'
 ): Promise<string | null> {
   try {
     const mimeType = file.type || 'image/jpeg'
     const fileExt = getFileExtension(file.type, fileName)
-    const safeFileName = sanitizeFileName(fileName)
     const timestamp = Date.now()
-    const filePath = `${userId}/${timestamp}-${safeFileName}.${fileExt}`
+    const filePath = `${userId}/${timestamp}.${fileExt}`
 
     const { data, error } = await supabase.storage
       .from(bucket)

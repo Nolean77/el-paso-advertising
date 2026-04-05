@@ -7,4 +7,4 @@ crons = ["*/5 * * * *"]
 
 [vars]
 PORTAL_URL = "https://portal.elpasoadvertisingsolutions.com"
-META_REDIRECT_URI = "https://ep-meta-poster.workers.dev/oauth/meta/callback"
+META_REDIRECT_URI = "https://ep-meta-poster.noleanf.workers.dev/oauth/meta/callback"

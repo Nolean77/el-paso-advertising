@@ -244,6 +244,11 @@ async function publishToFacebook(env, post, connection) {
 
   try {
     const isVideo = post.post_type === 'video'
+
+    if (post.image_url) {
+      await assertPublicMediaUrl(post.image_url, `facebook post ${post.id}`)
+    }
+
     const endpoint = isVideo
       ? `${META_GRAPH_BASE}/${connection.facebook_page_id}/videos`
       : post.image_url
@@ -268,11 +273,11 @@ async function publishToFacebook(env, post, connection) {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: payload,
     })
-    const result = await response.json()
+    const result = await readMetaResponseBody(response)
     console.log('Facebook API response for post', post.id, '| Status:', response.status, '| Result:', JSON.stringify(result))
 
     if (!response.ok || result.error) {
-      throw new Error(result.error?.message || 'Facebook post failed.')
+      throw new Error(result.error?.message || `Facebook post failed (HTTP ${response.status}). ${result.rawText || ''}`.trim())
     }
 
     await updateScheduledPost(env, post.id, {
@@ -319,6 +324,8 @@ async function publishToInstagram(env, post, connection) {
   try {
     const isVideo = post.post_type === 'video'
 
+    await assertPublicMediaUrl(post.image_url, `instagram post ${post.id}`)
+
     const containerPayload = new URLSearchParams()
     containerPayload.set('access_token', connection.page_access_token)
     containerPayload.set('caption', post.caption || '')
@@ -335,11 +342,11 @@ async function publishToInstagram(env, post, connection) {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: containerPayload,
     })
-    const containerData = await containerRes.json()
+    const containerData = await readMetaResponseBody(containerRes)
     console.log('Instagram media container API response for post', post.id, '| Status:', containerRes.status, '| Result:', JSON.stringify(containerData))
 
     if (!containerRes.ok || containerData.error) {
-      throw new Error(containerData.error?.message || 'Instagram media container failed.')
+      throw new Error(containerData.error?.message || `Instagram media container failed (HTTP ${containerRes.status}). ${containerData.rawText || ''}`.trim())
     }
 
     const publishPayload = new URLSearchParams()
@@ -351,11 +358,11 @@ async function publishToInstagram(env, post, connection) {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: publishPayload,
     })
-    const publishData = await publishRes.json()
+    const publishData = await readMetaResponseBody(publishRes)
     console.log('Instagram media publish API response for post', post.id, '| Status:', publishRes.status, '| Result:', JSON.stringify(publishData))
 
     if (!publishRes.ok || publishData.error) {
-      throw new Error(publishData.error?.message || 'Instagram publish failed.')
+      throw new Error(publishData.error?.message || `Instagram publish failed (HTTP ${publishRes.status}). ${publishData.rawText || ''}`.trim())
     }
 
     await updateScheduledPost(env, post.id, {
@@ -561,6 +568,44 @@ function redirectToPortal(env, params) {
     target.searchParams.set(key, String(value))
   }
   return Response.redirect(target.toString(), 302)
+}
+
+async function assertPublicMediaUrl(url, contextLabel) {
+  try {
+    const res = await fetch(url, { method: 'HEAD' })
+    if (res.ok) {
+      return
+    }
+
+    // Some CDNs do not support HEAD for signed/object URLs; fallback to ranged GET.
+    const ranged = await fetch(url, {
+      method: 'GET',
+      headers: { Range: 'bytes=0-0' },
+    })
+    if (!ranged.ok) {
+      throw new Error(`Media URL is not publicly reachable for ${contextLabel} (HEAD ${res.status}, GET ${ranged.status}).`)
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Media URL validation failed.'
+    throw new Error(message)
+  }
+}
+
+async function readMetaResponseBody(response) {
+  const rawText = await response.text()
+  if (!rawText) {
+    return { rawText: '' }
+  }
+
+  try {
+    const parsed = JSON.parse(rawText)
+    return {
+      ...parsed,
+      rawText,
+    }
+  } catch {
+    return { rawText }
+  }
 }
 
 async function querySupabase(env, path, query) {

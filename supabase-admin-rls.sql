@@ -162,5 +162,35 @@ CREATE POLICY "Admins can update content requests" ON public.content_requests
   FOR UPDATE USING (public.is_admin())
   WITH CHECK (public.is_admin());
 
+-- Storage policies for post-images bucket
+-- Allows clients to upload into their own folder and admins to upload for any client folder.
+DROP POLICY IF EXISTS "Authenticated users can upload post images" ON storage.objects;
+DROP POLICY IF EXISTS "Public can view post images" ON storage.objects;
+DROP POLICY IF EXISTS "Users can delete own post images or admins" ON storage.objects;
+
+CREATE POLICY "Authenticated users can upload post images" ON storage.objects
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    bucket_id = 'post-images'
+    AND (
+      public.is_admin()
+      OR auth.uid()::text = (storage.foldername(name))[1]
+    )
+  );
+
+CREATE POLICY "Public can view post images" ON storage.objects
+  FOR SELECT TO public
+  USING (bucket_id = 'post-images');
+
+CREATE POLICY "Users can delete own post images or admins" ON storage.objects
+  FOR DELETE TO authenticated
+  USING (
+    bucket_id = 'post-images'
+    AND (
+      public.is_admin()
+      OR auth.uid()::text = (storage.foldername(name))[1]
+    )
+  );
+
 -- Promote your admin user after signup (replace with the real auth user id)
 -- UPDATE public.profiles SET role = 'admin' WHERE id = 'YOUR_ADMIN_USER_ID';

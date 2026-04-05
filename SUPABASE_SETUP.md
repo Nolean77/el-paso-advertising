@@ -199,31 +199,44 @@ WHERE table_schema = 'public'
 
 ### 2. Storage Setup
 
-Create a storage bucket for reference images:
+Create a storage bucket for uploaded post images:
 
 1. Go to Storage in your Supabase dashboard
-2. Create a new bucket named `reference-images`
+2. Create a new bucket named `post-images`
 3. Set it to **Public** bucket
 4. Add the following policies:
 
 ```sql
 -- Allow authenticated users to upload images
-CREATE POLICY "Users can upload reference images"
+-- Clients can upload only into their own folder (auth.uid()), admins can upload for any client folder.
+CREATE POLICY "Authenticated users can upload post images"
 ON storage.objects FOR INSERT
 TO authenticated
-WITH CHECK (bucket_id = 'reference-images' AND auth.uid()::text = (storage.foldername(name))[1]);
+WITH CHECK (
+  bucket_id = 'post-images'
+  AND (
+    public.is_admin()
+    OR auth.uid()::text = (storage.foldername(name))[1]
+  )
+);
 
 -- Allow public to view images
-CREATE POLICY "Public can view reference images"
+CREATE POLICY "Public can view post images"
 ON storage.objects FOR SELECT
 TO public
-USING (bucket_id = 'reference-images');
+USING (bucket_id = 'post-images');
 
 -- Allow users to delete their own images
-CREATE POLICY "Users can delete own images"
+CREATE POLICY "Users can delete own post images or admins"
 ON storage.objects FOR DELETE
 TO authenticated
-USING (bucket_id = 'reference-images' AND auth.uid()::text = (storage.foldername(name))[1]);
+USING (
+  bucket_id = 'post-images'
+  AND (
+    public.is_admin()
+    OR auth.uid()::text = (storage.foldername(name))[1]
+  )
+);
 ```
 
 ### 3. Authentication Setup

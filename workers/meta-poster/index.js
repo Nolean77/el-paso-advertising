@@ -163,35 +163,41 @@ async function publishPost(env, post) {
     const expiresAt = new Date(activeConnection.token_expires_at)
     const msUntilExpiry = expiresAt.getTime() - Date.now()
 
-    if (msUntilExpiry <= 0) {
-      if (needsFacebook) {
-        await insertPostLog(env, {
-          post_id: post.id,
-          client_id: post.user_id,
-          platform: 'facebook',
-          status: 'failed',
-          error_message: 'Meta access token is expired. Reconnect this client account.',
-        })
-      }
-
-      if (needsInstagram) {
-        await insertPostLog(env, {
-          post_id: post.id,
-          client_id: post.user_id,
-          platform: 'instagram',
-          status: 'failed',
-          error_message: 'Meta access token is expired. Reconnect this client account.',
-        })
-      }
-
-      await updateScheduledPost(env, post.id, {
-        post_error: 'Meta access token is expired. Reconnect this client account.',
-      })
-      return
-    }
-
+    // Attempt refresh if token is expired or expiring soon (7 days)
     if (msUntilExpiry <= 7 * 24 * 60 * 60 * 1000) {
-      activeConnection = await tryRefreshConnectionToken(env, activeConnection, post)
+      const refreshed = await tryRefreshConnectionToken(env, activeConnection, post)
+      activeConnection = refreshed
+
+      // After refresh attempt, check if token is still expired
+      const newExpiresAt = activeConnection.token_expires_at ? new Date(activeConnection.token_expires_at) : null
+      const msUntilNewExpiry = newExpiresAt ? newExpiresAt.getTime() - Date.now() : 1
+
+      if (msUntilNewExpiry <= 0) {
+        if (needsFacebook) {
+          await insertPostLog(env, {
+            post_id: post.id,
+            client_id: post.user_id,
+            platform: 'facebook',
+            status: 'failed',
+            error_message: 'Meta access token is expired and could not be refreshed. Reconnect this client account.',
+          })
+        }
+
+        if (needsInstagram) {
+          await insertPostLog(env, {
+            post_id: post.id,
+            client_id: post.user_id,
+            platform: 'instagram',
+            status: 'failed',
+            error_message: 'Meta access token is expired and could not be refreshed. Reconnect this client account.',
+          })
+        }
+
+        await updateScheduledPost(env, post.id, {
+          post_error: 'Meta access token is expired and could not be refreshed. Reconnect this client account.',
+        })
+        return
+      }
     }
   }
 

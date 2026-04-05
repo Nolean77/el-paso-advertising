@@ -26,6 +26,10 @@ type CalendarItem = {
   caption: string
   imageUrl: string
   status: 'pending' | 'approved'
+  autoPostEnabled?: boolean
+  postedToFacebook?: boolean
+  postedToInstagram?: boolean
+  postError?: string | null
   feedback?: string
   approvalId?: string
   scheduledId?: string
@@ -60,11 +64,15 @@ export function ContentCalendar({ posts, approvalPosts = [], onUpdatePost, onDel
     .map((post) => ({
       id: `scheduled-${post.id}`,
       scheduledId: post.id,
-      date: post.date,
+      date: post.scheduled_at || post.date,
       platform: post.platform,
       caption: post.caption,
       imageUrl: post.image_url,
       status: 'approved' as const,
+      autoPostEnabled: post.auto_post_enabled ?? true,
+      postedToFacebook: post.posted_to_facebook ?? false,
+      postedToInstagram: post.posted_to_instagram ?? false,
+      postError: post.post_error,
     }))
 
   const calendarItems = [...pendingApprovalItems, ...approvedItems].sort((a, b) => a.date.localeCompare(b.date))
@@ -144,6 +152,31 @@ export function ContentCalendar({ posts, approvalPosts = [], onUpdatePost, onDel
                     : (language === 'en' ? 'Approved' : 'Aprobado')}
                 </Badge>
               </div>
+
+              {item.status === 'approved' && item.autoPostEnabled && (
+                <div className="flex flex-wrap gap-2">
+                  {item.postedToFacebook && (
+                    <Badge variant="outline" className="border-emerald-500/50 text-emerald-600">
+                      FB Posted
+                    </Badge>
+                  )}
+                  {item.postedToInstagram && (
+                    <Badge variant="outline" className="border-emerald-500/50 text-emerald-600">
+                      IG Posted
+                    </Badge>
+                  )}
+                  {item.postError && (
+                    <Badge variant="outline" className="border-destructive/50 text-destructive">
+                      {language === 'en' ? 'Post Failed' : 'Error al publicar'}
+                    </Badge>
+                  )}
+                  {!item.postedToFacebook && !item.postedToInstagram && !item.postError && (
+                    <Badge variant="outline" className="border-amber-500/50 text-amber-700">
+                      {language === 'en' ? 'Pending Auto-Post' : 'Pendiente de publicación'}
+                    </Badge>
+                  )}
+                </div>
+              )}
 
               <p className="text-sm text-muted-foreground line-clamp-3 whitespace-pre-line">
                 {item.caption}

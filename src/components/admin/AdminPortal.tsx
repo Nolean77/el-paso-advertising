@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { ClientProfile, User } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -40,6 +41,26 @@ export function AdminPortal({ user, onLogout }: AdminPortalProps) {
         setClients(nextClients)
         setSelectedClientId((current) => current || nextClients[0]?.id || '')
       })
+  }, [])
+
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    const connected = url.searchParams.get('meta_connected')
+    const error = url.searchParams.get('meta_error')
+
+    if (!connected && !error) return
+
+    if (connected === 'true') {
+      toast.success('Meta account connected successfully.')
+    }
+
+    if (error) {
+      toast.error(`Meta connection failed: ${error}`)
+    }
+
+    url.searchParams.delete('meta_connected')
+    url.searchParams.delete('meta_error')
+    window.history.replaceState({}, '', url.toString())
   }, [])
 
   const selectedClient = clients.find((client) => client.id === selectedClientId) ?? null

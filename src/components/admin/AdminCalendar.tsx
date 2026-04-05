@@ -51,7 +51,8 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
 
   const addApprovedPostToCalendar = async (post: ApprovalPost) => {
     const { caption, meta } = parseApprovalCaption(post.caption)
-    const scheduledDate = meta.requestedDate || new Date().toISOString().split('T')[0]
+    const scheduledAt = meta.requestedDate || null
+    const scheduledDate = (scheduledAt || new Date().toISOString()).split('T')[0]
 
     const { data: existingPosts, error: duplicateCheckError } = await supabase
       .from('scheduled_posts')
@@ -92,6 +93,9 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
         caption,
         image_url: post.image_url || buildApprovalImagePlaceholder(meta.title || caption),
         status: 'scheduled',
+        scheduled_at: scheduledAt,
+        auto_post_enabled: meta.autoPostEnabled ?? true,
+        post_type: meta.postType || 'photo',
       }])
       .select()
       .single()

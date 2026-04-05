@@ -162,6 +162,41 @@ SET role = 'admin'
 WHERE id = 'YOUR_ADMIN_USER_ID';
 ```
 
+### 1b. Meta Auto-Posting Patch (Required for Graph API auto-publishing)
+
+Run `supabase-meta-integration.sql` from this repository.
+
+This patch adds:
+- `meta_connections` for storing each client's page token and IG business account,
+- `post_logs` for publish attempt auditing,
+- auto-post columns on `scheduled_posts` (`scheduled_at`, post status flags, errors, post IDs),
+- RLS policies for admin visibility and client self-visibility.
+
+After running the SQL, verify columns/tables exist:
+
+```sql
+SELECT column_name
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'scheduled_posts'
+  AND column_name IN (
+    'scheduled_at',
+    'auto_post_enabled',
+    'posted_to_facebook',
+    'posted_to_instagram',
+    'facebook_post_id',
+    'instagram_post_id',
+    'post_error',
+    'posted_at',
+    'post_type'
+  );
+
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public'
+  AND table_name IN ('meta_connections', 'post_logs');
+```
+
 ### 2. Storage Setup
 
 Create a storage bucket for reference images:
@@ -203,6 +238,43 @@ USING (bucket_id = 'reference-images' AND auth.uid()::text = (storage.foldername
 The app is configured with your Supabase credentials:
 - **Project URL**: `https://tawdrfphyjwfmzheyeia.supabase.co`
 - **Anon Key**: Already configured in `src/lib/supabase.ts`
+
+For Meta OAuth in Cloudflare Pages frontend, add:
+
+```bash
+VITE_META_APP_ID=979397271325727
+VITE_META_REDIRECT_URI=https://ep-meta-poster.workers.dev/oauth/meta/callback
+```
+
+Do not store Meta app secret, Supabase service key, or access tokens in frontend source.
+
+### 4a. Cloudflare Worker Secrets (Meta Poster)
+
+From `workers/meta-poster`, set secrets:
+
+```bash
+wrangler secret put META_APP_ID
+wrangler secret put META_APP_SECRET
+wrangler secret put SUPABASE_URL
+wrangler secret put SUPABASE_SERVICE_KEY
+```
+
+Values:
+- `META_APP_ID`: `979397271325727`
+- `META_APP_SECRET`: Meta app secret from developers.facebook.com
+- `SUPABASE_URL`: your Supabase project URL
+- `SUPABASE_SERVICE_KEY`: Supabase service role key (never use anon key here)
+
+Deploy worker:
+
+```bash
+cd workers/meta-poster
+wrangler deploy
+```
+
+The worker listens on:
+- `GET /oauth/meta/callback` for OAuth redirect handling
+- cron schedule every 5 minutes for auto-posting
 
 ### 5. Create Test User
 

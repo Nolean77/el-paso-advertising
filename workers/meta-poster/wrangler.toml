@@ -1,0 +1,10 @@
+name = "ep-meta-poster"
+main = "index.js"
+compatibility_date = "2024-01-01"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+PORTAL_URL = "https://portal.elpasoadvertisingsolutions.com"
+META_REDIRECT_URI = "https://ep-meta-poster.workers.dev/oauth/meta/callback"

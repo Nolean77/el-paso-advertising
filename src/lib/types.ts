@@ -13,6 +13,15 @@ export interface ScheduledPost {
   caption: string
   image_url: string
   status: 'scheduled' | 'removed'
+  scheduled_at?: string | null
+  auto_post_enabled?: boolean
+  posted_to_facebook?: boolean
+  posted_to_instagram?: boolean
+  facebook_post_id?: string | null
+  instagram_post_id?: string | null
+  post_error?: string | null
+  posted_at?: string | null
+  post_type?: 'photo' | 'video' | null
 }
 
 export interface ApprovalPost {
@@ -29,6 +38,8 @@ export interface ApprovalPost {
 export interface ApprovalWorkflowMeta {
   requestedBy?: 'admin' | 'client'
   requestedDate?: string
+  autoPostEnabled?: boolean
+  postType?: 'photo' | 'video'
   sourceRequestId?: string
   sourceScheduledPostId?: string
   changeType?: 'revision' | 'removed'
@@ -68,4 +79,16 @@ export interface ClientProfile {
   email?: string
   role: 'admin' | 'client'
   created_at: string
+}
+
+export interface MetaConnection {
+  id: string
+  client_id: string
+  facebook_page_id: string
+  facebook_page_name?: string | null
+  instagram_account_id?: string | null
+  page_access_token?: string
+  token_expires_at?: string | null
+  connected_at?: string
+  is_active: boolean
 }

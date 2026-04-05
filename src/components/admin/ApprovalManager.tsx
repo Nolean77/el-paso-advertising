@@ -21,7 +21,12 @@ interface ApprovalManagerProps {
 
 export function ApprovalManager({ selectedClientId, selectedClientName }: ApprovalManagerProps) {
   const [posts, setPosts] = useState<ApprovalPost[]>([])
-  const [scheduledDate, setScheduledDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [scheduledAt, setScheduledAt] = useState(() => {
+    const now = new Date()
+    now.setMinutes(now.getMinutes() + 15)
+    return now.toISOString().slice(0, 16)
+  })
+  const [autoPostEnabled, setAutoPostEnabled] = useState(true)
   const [platform, setPlatform] = useState<ApprovalPost['platform'] | ''>('')
   const [caption, setCaption] = useState('')
   const [imageUrl, setImageUrl] = useState('')
@@ -54,7 +59,8 @@ export function ApprovalManager({ selectedClientId, selectedClientName }: Approv
 
   const addPostToCalendar = async (post: ApprovalPost) => {
     const { caption: visibleCaption, meta } = parseApprovalCaption(post.caption)
-    const scheduledDateValue = meta.requestedDate || new Date().toISOString().split('T')[0]
+    const scheduledAtValue = meta.requestedDate || null
+    const scheduledDateValue = (scheduledAtValue || new Date().toISOString()).split('T')[0]
 
     const { data: existingPosts, error: existingError } = await supabase
       .from('scheduled_posts')
@@ -83,6 +89,9 @@ export function ApprovalManager({ selectedClientId, selectedClientName }: Approv
       caption: visibleCaption,
       image_url: post.image_url || buildApprovalImagePlaceholder(meta.title || visibleCaption),
       status: 'scheduled',
+      scheduled_at: scheduledAtValue,
+      auto_post_enabled: meta.autoPostEnabled ?? true,
+      post_type: meta.postType || 'photo',
     })
 
     if (scheduleError) {
@@ -149,7 +158,9 @@ export function ApprovalManager({ selectedClientId, selectedClientName }: Approv
     setSaving(true)
     const encodedCaption = encodeApprovalCaption(caption, {
       requestedBy: 'admin',
-      requestedDate: scheduledDate || undefined,
+      requestedDate: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
+      autoPostEnabled,
+      postType: 'photo',
     })
 
     const { data, error } = await supabase
@@ -176,7 +187,10 @@ export function ApprovalManager({ selectedClientId, selectedClientName }: Approv
     setCaption('')
     setImageUrl('')
     setPlatform('')
-    setScheduledDate(new Date().toISOString().split('T')[0])
+    const now = new Date()
+    now.setMinutes(now.getMinutes() + 15)
+    setScheduledAt(now.toISOString().slice(0, 16))
+    setAutoPostEnabled(true)
   }
 
   const statusColor = (status: string) => {
@@ -222,9 +236,26 @@ export function ApprovalManager({ selectedClientId, selectedClientName }: Approv
               </div>
 
               <div className="space-y-2">
-                <Label>Target Publish Date</Label>
-                <Input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} />
+                <Label>Target Publish Time</Label>
+                <Input
+                  type="datetime-local"
+                  value={scheduledAt}
+                  onChange={(e) => setScheduledAt(e.target.value)}
+                />
               </div>
+            </div>
+
+            <div className="flex items-start gap-2 rounded-md border border-border bg-muted/20 px-3 py-2">
+              <input
+                id="approvalmanager-autopost"
+                type="checkbox"
+                checked={autoPostEnabled}
+                onChange={(event) => setAutoPostEnabled(event.target.checked)}
+                className="mt-1"
+              />
+              <Label htmlFor="approvalmanager-autopost" className="text-sm leading-5">
+                Auto-post when approved and schedule time is reached.
+              </Label>
             </div>
 
             <div className="space-y-2">

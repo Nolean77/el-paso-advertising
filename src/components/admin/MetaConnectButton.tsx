@@ -9,8 +9,6 @@ const REDIRECT_URI = import.meta.env.VITE_META_REDIRECT_URI || 'https://ep-meta-
 const SCOPES = [
   'pages_manage_posts',
   'pages_read_engagement',
-  'instagram_basic',
-  'instagram_content_publish',
   'pages_show_list',
 ].join(',')
 

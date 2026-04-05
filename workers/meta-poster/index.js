@@ -2,6 +2,13 @@ const META_API_VERSION = 'v19.0'
 const META_GRAPH_BASE = `https://graph.facebook.com/${META_API_VERSION}`
 const META_DIALOG_REDIRECT_PATH = '/oauth/meta/callback'
 const BLOCKED_FACEBOOK_PAGE_IDS = new Set(['433627129826098'])
+const TOKEN_RECONNECT_REQUIRED_MESSAGE = 'Meta access token is expired. Reconnect this client account.'
+const TOKEN_REFRESH_FAILED_MESSAGE = 'Meta token refresh failed. Reconnect this client account.'
+const NO_ACTIVE_CONNECTION_MESSAGE = 'No active Meta connection found for this client.'
+const NO_INSTAGRAM_ACCOUNT_MESSAGE = 'No connected Instagram Business account for this client.'
+const INSTAGRAM_MEDIA_REQUIRED_MESSAGE = 'Instagram requires an image or video URL.'
+const FACEBOOK_DAILY_CAP_MESSAGE = 'Daily Facebook posting cap reached for this client page.'
+const INSTAGRAM_DAILY_CAP_MESSAGE = 'Daily Instagram posting cap reached for this client page.'
 
 export default {
   async fetch(request, env) {
@@ -145,7 +152,7 @@ async function publishPost(env, post) {
         client_id: post.user_id,
         platform: 'facebook',
         status: 'skipped',
-        error_message: 'No active Meta connection found for this client.',
+        error_message: NO_ACTIVE_CONNECTION_MESSAGE,
       })
     }
 
@@ -155,7 +162,7 @@ async function publishPost(env, post) {
         client_id: post.user_id,
         platform: 'instagram',
         status: 'skipped',
-        error_message: 'No active Meta connection found for this client.',
+        error_message: NO_ACTIVE_CONNECTION_MESSAGE,
       })
     }
 
@@ -166,29 +173,24 @@ async function publishPost(env, post) {
   if (activeConnection.token_expires_at) {
     const expiresAt = new Date(activeConnection.token_expires_at)
     const msUntilExpiry = expiresAt.getTime() - Date.now()
-    console.log('Token expiry check for post', post.id, '| expiresAt:', activeConnection.token_expires_at, '| msUntilExpiry:', msUntilExpiry)
 
     // Attempt refresh if token is expired or expiring soon (7 days)
     if (msUntilExpiry <= 7 * 24 * 60 * 60 * 1000) {
-      console.log('Token needs refresh for post', post.id, '| Attempting refresh...')
       const refreshed = await tryRefreshConnectionToken(env, activeConnection, post)
       activeConnection = refreshed
-      console.log('Token refresh completed for post', post.id, '| New token_expires_at:', activeConnection.token_expires_at)
 
       // After refresh attempt, check if token is still expired
       const newExpiresAt = activeConnection.token_expires_at ? new Date(activeConnection.token_expires_at) : null
       const msUntilNewExpiry = newExpiresAt ? newExpiresAt.getTime() - Date.now() : 1
-      console.log('After refresh check for post', post.id, '| msUntilNewExpiry:', msUntilNewExpiry)
 
       if (msUntilNewExpiry <= 0) {
-        console.log('Token is still expired after refresh attempt for post', post.id)
         if (needsFacebook) {
           await insertPostLog(env, {
             post_id: post.id,
             client_id: post.user_id,
             platform: 'facebook',
             status: 'failed',
-            error_message: 'Meta access token is expired and could not be refreshed. Reconnect this client account.',
+            error_message: TOKEN_RECONNECT_REQUIRED_MESSAGE,
           })
         }
 
@@ -198,12 +200,12 @@ async function publishPost(env, post) {
             client_id: post.user_id,
             platform: 'instagram',
             status: 'failed',
-            error_message: 'Meta access token is expired and could not be refreshed. Reconnect this client account.',
+            error_message: TOKEN_RECONNECT_REQUIRED_MESSAGE,
           })
         }
 
         await updateScheduledPost(env, post.id, {
-          post_error: 'Meta access token is expired and could not be refreshed. Reconnect this client account.',
+          post_error: TOKEN_RECONNECT_REQUIRED_MESSAGE,
         })
         return
       }
@@ -221,7 +223,7 @@ async function publishPost(env, post) {
         client_id: post.user_id,
         platform: 'instagram',
         status: 'skipped',
-        error_message: 'Client has no connected Instagram Business account.',
+        error_message: NO_INSTAGRAM_ACCOUNT_MESSAGE,
       })
       return
     }
@@ -232,10 +234,10 @@ async function publishPost(env, post) {
         client_id: post.user_id,
         platform: 'instagram',
         status: 'skipped',
-        error_message: 'Instagram API requires an image or video URL.',
+        error_message: INSTAGRAM_MEDIA_REQUIRED_MESSAGE,
       })
       await updateScheduledPost(env, post.id, {
-        post_error: 'Instagram API requires an image or video URL.',
+        post_error: INSTAGRAM_MEDIA_REQUIRED_MESSAGE,
       })
       return
     }
@@ -252,7 +254,7 @@ async function publishToFacebook(env, post, connection) {
       client_id: post.user_id,
       platform: 'facebook',
       status: 'skipped',
-      error_message: 'Daily Facebook posting cap reached for this client page.',
+      error_message: FACEBOOK_DAILY_CAP_MESSAGE,
     })
     return
   }
@@ -331,7 +333,7 @@ async function publishToInstagram(env, post, connection) {
       client_id: post.user_id,
       platform: 'instagram',
       status: 'skipped',
-      error_message: 'Daily Instagram posting cap reached for this client page.',
+      error_message: INSTAGRAM_DAILY_CAP_MESSAGE,
     })
     return
   }
@@ -429,31 +431,25 @@ async function checkDailyPostLimit(env, clientId, platform) {
 
 async function tryRefreshConnectionToken(env, connection, post) {
   try {
-    console.log('Attempting to refresh token for post', post.id, '| connection ID:', connection.id)
     const refreshed = await exchangeForLongLivedUserToken(env, connection.page_access_token)
-      console.log('Token exchange response for post', post.id, '| has access_token:', !!refreshed?.access_token, '| expires_in:', refreshed?.expires_in)
-    
+
     if (!refreshed?.access_token) {
-      console.log('Token exchange did not return access_token for post', post.id)
       return connection
     }
 
-      // Validate expires_in: use a default of 5,184,000 seconds (60 days) if missing or invalid
-      const expiresInSeconds = typeof refreshed.expires_in === 'number' && refreshed.expires_in > 0 
-        ? refreshed.expires_in 
-        : 5184000 // 60 days
-      console.log('Using expires_in for token:', expiresInSeconds, 'seconds')
-    
-      const tokenExpiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString()
+    // Validate expires_in: use a default of 5,184,000 seconds (60 days) if missing or invalid
+    const expiresInSeconds = typeof refreshed.expires_in === 'number' && refreshed.expires_in > 0
+      ? refreshed.expires_in
+      : 5184000 // 60 days
+
+    const tokenExpiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString()
     const updated = {
       page_access_token: refreshed.access_token,
       token_expires_at: tokenExpiresAt,
       connected_at: new Date().toISOString(),
     }
 
-    console.log('Updating connection in database for post', post.id, '| new expires_at:', tokenExpiresAt)
     await updateSupabase(env, `/rest/v1/meta_connections?id=eq.${connection.id}`, updated)
-    console.log('Database update completed for post', post.id)
 
     return {
       ...connection,
@@ -462,14 +458,14 @@ async function tryRefreshConnectionToken(env, connection, post) {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Token refresh failed'
     console.error('Error refreshing Meta token for post', post.id, ':', errorMessage)
-    
+
     if (!post.posted_to_facebook) {
       await insertPostLog(env, {
         post_id: post.id,
         client_id: post.user_id,
         platform: 'facebook',
         status: 'skipped',
-        error_message: 'Meta token refresh failed: ' + errorMessage,
+        error_message: TOKEN_REFRESH_FAILED_MESSAGE,
       })
     }
 
@@ -479,9 +475,13 @@ async function tryRefreshConnectionToken(env, connection, post) {
         client_id: post.user_id,
         platform: 'instagram',
         status: 'skipped',
-        error_message: 'Meta token refresh failed: ' + errorMessage,
+        error_message: TOKEN_REFRESH_FAILED_MESSAGE,
       })
     }
+
+    await updateScheduledPost(env, post.id, {
+      post_error: TOKEN_REFRESH_FAILED_MESSAGE,
+    })
 
     return connection
   }

@@ -162,17 +162,22 @@ async function publishPost(env, post) {
   if (activeConnection.token_expires_at) {
     const expiresAt = new Date(activeConnection.token_expires_at)
     const msUntilExpiry = expiresAt.getTime() - Date.now()
+    console.log('Token expiry check for post', post.id, '| expiresAt:', activeConnection.token_expires_at, '| msUntilExpiry:', msUntilExpiry)
 
     // Attempt refresh if token is expired or expiring soon (7 days)
     if (msUntilExpiry <= 7 * 24 * 60 * 60 * 1000) {
+      console.log('Token needs refresh for post', post.id, '| Attempting refresh...')
       const refreshed = await tryRefreshConnectionToken(env, activeConnection, post)
       activeConnection = refreshed
+      console.log('Token refresh completed for post', post.id, '| New token_expires_at:', activeConnection.token_expires_at)
 
       // After refresh attempt, check if token is still expired
       const newExpiresAt = activeConnection.token_expires_at ? new Date(activeConnection.token_expires_at) : null
       const msUntilNewExpiry = newExpiresAt ? newExpiresAt.getTime() - Date.now() : 1
+      console.log('After refresh check for post', post.id, '| msUntilNewExpiry:', msUntilNewExpiry)
 
       if (msUntilNewExpiry <= 0) {
+        console.log('Token is still expired after refresh attempt for post', post.id)
         if (needsFacebook) {
           await insertPostLog(env, {
             post_id: post.id,
@@ -420,8 +425,12 @@ async function checkDailyPostLimit(env, clientId, platform) {
 
 async function tryRefreshConnectionToken(env, connection, post) {
   try {
+    console.log('Attempting to refresh token for post', post.id, '| connection ID:', connection.id)
     const refreshed = await exchangeForLongLivedUserToken(env, connection.page_access_token)
+    console.log('Token exchange response for post', post.id, '| has access_token:', !!refreshed?.access_token)
+    
     if (!refreshed?.access_token) {
+      console.log('Token exchange did not return access_token for post', post.id)
       return connection
     }
 
@@ -432,7 +441,9 @@ async function tryRefreshConnectionToken(env, connection, post) {
       connected_at: new Date().toISOString(),
     }
 
+    console.log('Updating connection in database for post', post.id, '| new expires_at:', tokenExpiresAt)
     await updateSupabase(env, `/rest/v1/meta_connections?id=eq.${connection.id}`, updated)
+    console.log('Database update completed for post', post.id)
 
     return {
       ...connection,
@@ -441,13 +452,14 @@ async function tryRefreshConnectionToken(env, connection, post) {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Token refresh failed'
     console.error('Error refreshing Meta token for post', post.id, ':', errorMessage)
+    
     if (!post.posted_to_facebook) {
       await insertPostLog(env, {
         post_id: post.id,
         client_id: post.user_id,
         platform: 'facebook',
         status: 'skipped',
-        error_message: 'Meta token is close to expiry and automatic refresh failed.',
+        error_message: 'Meta token refresh failed: ' + errorMessage,
       })
     }
 
@@ -457,7 +469,7 @@ async function tryRefreshConnectionToken(env, connection, post) {
         client_id: post.user_id,
         platform: 'instagram',
         status: 'skipped',
-        error_message: 'Meta token is close to expiry and automatic refresh failed.',
+        error_message: 'Meta token refresh failed: ' + errorMessage,
       })
     }
 

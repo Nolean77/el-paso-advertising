@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { FILE_SIZE_LIMITS } from '@/lib/imageCompression'
+import { compressImage, FILE_SIZE_LIMITS, formatFileSize } from '@/lib/imageCompression'
 import { uploadImageFile } from '@/lib/uploadImage'
 
 interface ImageUploadFieldProps {
@@ -50,7 +50,16 @@ export function ImageUploadField({
     setIsUploading(true)
 
     try {
-      const publicUrl = await uploadImageFile(file, uploadUserId, file.name, 'post-images')
+      let uploadFile: Blob = file
+
+      if (file.size > FILE_SIZE_LIMITS.warning) {
+        toast.info(`Compressing image from ${formatFileSize(file.size)}...`)
+        const compressed = await compressImage(file)
+        uploadFile = compressed.file
+        toast.success(`Image compressed to ${formatFileSize(compressed.compressedSize)}.`)
+      }
+
+      const publicUrl = await uploadImageFile(uploadFile, uploadUserId, file.name, 'post-images')
       if (!publicUrl) {
         toast.error('Unable to upload that image right now.')
         return
@@ -115,7 +124,7 @@ export function ImageUploadField({
             <p className="text-xs text-muted-foreground">or click to choose one from your device</p>
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               <Warning size={14} weight="bold" className="text-yellow-500" />
-              <span>Max 10MB</span>
+              <span>Max 10MB • Large images are compressed automatically</span>
             </div>
           </div>
         )}

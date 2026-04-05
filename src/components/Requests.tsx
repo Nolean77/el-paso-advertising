@@ -13,7 +13,7 @@ import type { ContentRequest, RequestSubmission } from '@/lib/types'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { FILE_SIZE_LIMITS } from '@/lib/imageCompression'
+import { compressImage, FILE_SIZE_LIMITS, formatFileSize } from '@/lib/imageCompression'
 import { uploadImageFile } from '@/lib/uploadImage'
 
 interface RequestsProps {
@@ -56,7 +56,21 @@ export function Requests({ requests, onSubmitRequest, userId, language }: Reques
       }
 
       try {
-        const publicUrl = await uploadImageFile(file, userId, file.name, 'post-images')
+        let uploadFile: Blob = file
+
+        if (file.size > FILE_SIZE_LIMITS.warning) {
+          toast.info(t.compressionWarning.replace('{size}', formatFileSize(file.size)))
+          const compressed = await compressImage(file)
+          uploadFile = compressed.file
+          toast.success(
+            t.compressionSuccess
+              .replace('{original}', formatFileSize(compressed.originalSize))
+              .replace('{compressed}', formatFileSize(compressed.compressedSize))
+              .replace('{ratio}', compressed.compressionRatio.toFixed(0))
+          )
+        }
+
+        const publicUrl = await uploadImageFile(uploadFile, userId, file.name, 'post-images')
         if (!publicUrl) {
           toast.error(language === 'en' ? 'Failed to upload image' : 'Error al subir la imagen')
           continue
@@ -237,8 +251,8 @@ export function Requests({ requests, onSubmitRequest, userId, language }: Reques
                       <Warning size={14} weight="bold" className="text-yellow-500" />
                       <span>
                         {language === 'en' 
-                          ? `Max 10MB per file` 
-                          : `Máx 10MB por archivo`}
+                          ? `Max 10MB per file • Auto-compression over 5MB` 
+                          : `Máx 10MB por archivo • Auto-compresión sobre 5MB`}
                       </span>
                     </div>
                   </div>

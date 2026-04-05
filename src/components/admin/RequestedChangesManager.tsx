@@ -242,6 +242,7 @@ export function RequestedChangesManager({ selectedClientId, selectedClientName }
                       label="Updated Image"
                       value={draft.imageUrl}
                       onChange={(value) => updateDraft(post.id, { imageUrl: value })}
+                      uploadUserId={selectedClientId || post.user_id}
                       helperText={meta.title
                         ? `Upload or paste a revised image for ${meta.title}.`
                         : 'Upload or paste a revised image for this approval item.'}

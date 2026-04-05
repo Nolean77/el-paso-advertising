@@ -5,11 +5,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { compressImage, FILE_SIZE_LIMITS, formatFileSize } from '@/lib/imageCompression'
+import { uploadImageFile } from '@/lib/uploadImage'
 
 interface ImageUploadFieldProps {
   label: string
   value: string
   onChange: (value: string) => void
+  uploadUserId?: string
   helperText?: string
   urlPlaceholder?: string
 }
@@ -18,15 +20,22 @@ export function ImageUploadField({
   label,
   value,
   onChange,
+  uploadUserId,
   helperText = 'Drag and drop an image here, click to upload, or paste an image URL below.',
   urlPlaceholder = 'https://...',
 }: ImageUploadFieldProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
 
   const handleFileSelection = async (files: FileList | null) => {
     const file = files?.[0]
     if (!file) return
+
+    if (!uploadUserId) {
+      toast.error('Select a client first before uploading an image.')
+      return
+    }
 
     if (!file.type.startsWith('image/')) {
       toast.error('Please upload an image file only.')
@@ -38,26 +47,36 @@ export function ImageUploadField({
       return
     }
 
+    setIsUploading(true)
+
     try {
       if (file.size > FILE_SIZE_LIMITS.warning) {
         toast.info(`Compressing image from ${formatFileSize(file.size)}...`)
         const compressed = await compressImage(file)
-        onChange(compressed.dataUrl)
-        toast.success(`Image compressed to ${formatFileSize(compressed.compressedSize)} and attached.`)
+
+        const publicUrl = await uploadImageFile(compressed.file, uploadUserId, file.name, 'post-images')
+        if (!publicUrl) {
+          toast.error('Unable to upload that image right now.')
+          return
+        }
+
+        onChange(publicUrl)
+        toast.success(`Image compressed to ${formatFileSize(compressed.compressedSize)} and uploaded.`)
         return
       }
 
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        const result = event.target?.result as string
-        if (result) {
-          onChange(result)
-          toast.success('Image attached successfully.')
-        }
+      const publicUrl = await uploadImageFile(file, uploadUserId, file.name, 'post-images')
+      if (!publicUrl) {
+        toast.error('Unable to upload that image right now.')
+        return
       }
-      reader.readAsDataURL(file)
+
+      onChange(publicUrl)
+      toast.success('Image uploaded successfully.')
     } catch {
       toast.error('Unable to process that image right now.')
+    } finally {
+      setIsUploading(false)
     }
   }
 
@@ -123,18 +142,19 @@ export function ImageUploadField({
           type="file"
           accept="image/*"
           className="hidden"
+          disabled={isUploading}
           onChange={(event) => handleFileSelection(event.target.files)}
         />
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} className="gap-2">
+        <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} className="gap-2" disabled={isUploading}>
           <Upload size={16} weight="bold" />
-          Upload Image
+          {isUploading ? 'Uploading...' : 'Upload Image'}
         </Button>
 
         {value && (
-          <Button type="button" variant="ghost" onClick={() => onChange('')} className="gap-2">
+          <Button type="button" variant="ghost" onClick={() => onChange('')} className="gap-2" disabled={isUploading}>
             <X size={16} weight="bold" />
             Remove Image
           </Button>
@@ -150,6 +170,7 @@ export function ImageUploadField({
             onChange={(event) => onChange(event.target.value)}
             placeholder={urlPlaceholder}
             className="pl-9"
+            disabled={isUploading}
           />
         </div>
       </div>

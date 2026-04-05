@@ -1,24 +1,44 @@
 import { supabase } from './supabase'
 
-export async function uploadImage(dataUrl: string, userId: string, fileName: string): Promise<string | null> {
-  try {
-    const base64Data = dataUrl.split(',')[1]
-    const mimeType = dataUrl.match(/data:([^;]+);/)?.[1] || 'image/png'
-    const fileExt = mimeType.split('/')[1]
-    const timestamp = Date.now()
-    const filePath = `${userId}/${timestamp}-${fileName}.${fileExt}`
+function sanitizeFileName(fileName: string): string {
+  return fileName
+    .toLowerCase()
+    .replace(/\.[^.]+$/, '')
+    .replace(/[^a-z0-9-_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || 'image'
+}
 
-    const byteCharacters = atob(base64Data)
-    const byteNumbers = new Array(byteCharacters.length)
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i)
-    }
-    const byteArray = new Uint8Array(byteNumbers)
-    const blob = new Blob([byteArray], { type: mimeType })
+function getFileExtension(contentType: string | undefined, fileName: string): string {
+  const fromName = fileName.split('.').pop()?.toLowerCase()
+  if (fromName && /^[a-z0-9]+$/.test(fromName)) {
+    return fromName
+  }
+
+  if (!contentType) return 'jpg'
+  if (contentType.includes('png')) return 'png'
+  if (contentType.includes('webp')) return 'webp'
+  if (contentType.includes('gif')) return 'gif'
+  if (contentType.includes('heic')) return 'heic'
+  return 'jpg'
+}
+
+export async function uploadImageFile(
+  file: Blob,
+  userId: string,
+  fileName = 'upload.jpg',
+  bucket = 'post-images'
+): Promise<string | null> {
+  try {
+    const mimeType = file.type || 'image/jpeg'
+    const fileExt = getFileExtension(file.type, fileName)
+    const safeFileName = sanitizeFileName(fileName)
+    const timestamp = Date.now()
+    const filePath = `${userId}/${timestamp}-${safeFileName}.${fileExt}`
 
     const { data, error } = await supabase.storage
-      .from('reference-images')
-      .upload(filePath, blob, {
+      .from(bucket)
+      .upload(filePath, file, {
         contentType: mimeType,
         upsert: false,
       })
@@ -29,7 +49,7 @@ export async function uploadImage(dataUrl: string, userId: string, fileName: str
     }
 
     const { data: publicUrlData } = supabase.storage
-      .from('reference-images')
+      .from(bucket)
       .getPublicUrl(data.path)
 
     return publicUrlData.publicUrl

@@ -14,14 +14,16 @@ import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { compressImage, formatFileSize, FILE_SIZE_LIMITS } from '@/lib/imageCompression'
+import { uploadImageFile } from '@/lib/uploadImage'
 
 interface RequestsProps {
   requests: ContentRequest[]
-  onSubmitRequest: (request: RequestSubmission) => void
+  onSubmitRequest: (request: RequestSubmission) => Promise<void> | void
+  userId: string
   language: Language
 }
 
-export function Requests({ requests, onSubmitRequest, language }: RequestsProps) {
+export function Requests({ requests, onSubmitRequest, userId, language }: RequestsProps) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [type, setType] = useState<ContentRequest['type']>('content')
@@ -58,7 +60,13 @@ export function Requests({ requests, onSubmitRequest, language }: RequestsProps)
         
         try {
           const compressed = await compressImage(file)
-          setReferenceImages((prev) => [...prev, compressed.dataUrl])
+          const publicUrl = await uploadImageFile(compressed.file, userId, file.name, 'post-images')
+          if (!publicUrl) {
+            toast.error(language === 'en' ? 'Failed to upload image' : 'Error al subir la imagen')
+            continue
+          }
+
+          setReferenceImages((prev) => [...prev, publicUrl])
           
           toast.success(
             t.compressionSuccess
@@ -66,18 +74,21 @@ export function Requests({ requests, onSubmitRequest, language }: RequestsProps)
               .replace('{compressed}', formatFileSize(compressed.compressedSize))
               .replace('{ratio}', compressed.compressionRatio.toFixed(0))
           )
-        } catch (error) {
-          toast.error(language === 'en' ? 'Failed to compress image' : 'Error al comprimir imagen')
+        } catch {
+          toast.error(language === 'en' ? 'Failed to process image' : 'Error al procesar la imagen')
         }
       } else {
-        const reader = new FileReader()
-        reader.onload = (e) => {
-          const result = e.target?.result as string
-          if (result) {
-            setReferenceImages((prev) => [...prev, result])
+        try {
+          const publicUrl = await uploadImageFile(file, userId, file.name, 'post-images')
+          if (!publicUrl) {
+            toast.error(language === 'en' ? 'Failed to upload image' : 'Error al subir la imagen')
+            continue
           }
+
+          setReferenceImages((prev) => [...prev, publicUrl])
+        } catch {
+          toast.error(language === 'en' ? 'Failed to upload image' : 'Error al subir la imagen')
         }
-        reader.readAsDataURL(file)
       }
     }
   }

@@ -267,6 +267,7 @@ export function ApprovalManager({ selectedClientId, selectedClientName }: Approv
               label="Image (optional)"
               value={imageUrl}
               onChange={setImageUrl}
+              uploadUserId={selectedClientId}
               helperText="Drag and drop a photo, upload one from your device, or paste an image URL for this approval item."
             />
 

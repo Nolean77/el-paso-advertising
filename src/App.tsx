@@ -474,6 +474,7 @@ function App() {
               <Requests 
                 requests={contentRequests || []}
                 onSubmitRequest={handleSubmitRequest}
+                userId={user.id}
                 language={currentLanguage}
               />
             </TabsContent>

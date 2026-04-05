@@ -74,7 +74,6 @@ async function runScheduledPoster(env) {
     auto_post_enabled: 'eq.true',
     scheduled_at: `lte.${nowIso}`,
     platform: 'in.(facebook,instagram)',
-    or: '(posted_to_facebook.eq.false,posted_to_instagram.eq.false)',
     order: 'scheduled_at.asc',
     limit: '100',
   })
@@ -85,7 +84,10 @@ async function runScheduledPoster(env) {
     return
   }
 
-  for (const post of posts) {
+  const filteredPosts = posts.filter((p) => !p.posted_to_facebook || !p.posted_to_instagram)
+  console.log('Posts after platform-status filter:', filteredPosts.length)
+
+  for (const post of filteredPosts) {
     console.log('Processing post ID:', post.id, '| User ID:', post.user_id, '| Platform:', post.platform)
     await publishPost(env, post)
   }

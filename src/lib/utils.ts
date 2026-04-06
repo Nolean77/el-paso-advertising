@@ -9,14 +9,20 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+function normalizeRoleValue(...roles: Array<string | null | undefined>) {
+  return roles
+    .map((role) => role?.trim().toLowerCase())
+    .find((role): role is string => Boolean(role))
+}
+
 export function resolveUserRole(
   profileRole?: string | null,
   userMetaRole?: string | null,
   appMetaRole?: string | null
 ): 'admin' | 'client' {
-  const role = profileRole ?? userMetaRole ?? appMetaRole ?? 'client'
-  if (role === 'admin') return 'admin'
-  return 'client'
+  return normalizeRoleValue(profileRole, userMetaRole, appMetaRole) === 'admin'
+    ? 'admin'
+    : 'client'
 }
 
 export function encodeApprovalCaption(caption: string, meta: ApprovalWorkflowMeta = {}) {
@@ -54,8 +60,17 @@ export function parseApprovalCaption(rawCaption: string) {
   }
 }
 
+function escapeSvgText(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 export function buildApprovalImagePlaceholder(title: string) {
-  const safeTitle = title.trim() || 'Content Request'
+  const safeTitle = escapeSvgText(title.trim() || 'Content Request')
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
       <defs>

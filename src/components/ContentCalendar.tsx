@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Calendar as CalendarIcon, Clock, CheckCircle, PencilSimple, ChatCircle, Trash } from '@phosphor-icons/react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -15,7 +15,7 @@ interface ContentCalendarProps {
   posts: ScheduledPost[]
   approvalPosts?: ApprovalPost[]
   metrics?: PerformanceMetric[]
-  onUpdatePost?: (postId: string, status: ApprovalPost['status'], feedback?: string) => void | Promise<void>
+  onUpdatePost?: (postId: string, status: ApprovalPost['status'], feedback?: string) => Promise<boolean | void> | boolean | void
   onDeletePost?: (postId: string) => void | Promise<void>
   language: Language
 }
@@ -75,43 +75,45 @@ export function ContentCalendar({ posts, approvalPosts = [], metrics = [], onUpd
   const t = translations[language].calendar
   const performanceT = translations[language].performance
 
-  const pendingApprovalItems: CalendarItem[] = approvalPosts
-    .filter((post) => {
-      const { meta } = parseApprovalCaption(post.caption)
-      return meta.requestedBy !== 'client' && post.status === 'pending'
-    })
-    .map((post) => {
-      const { caption, meta } = parseApprovalCaption(post.caption)
-      return {
-        id: `approval-${post.id}`,
-        approvalId: post.id,
-        date: meta.requestedDate || post.created_at || new Date().toISOString(),
+  const calendarItems = useMemo(() => {
+    const pendingApprovalItems: CalendarItem[] = approvalPosts
+      .filter((post) => {
+        const { meta } = parseApprovalCaption(post.caption)
+        return meta.requestedBy !== 'client' && post.status === 'pending'
+      })
+      .map((post) => {
+        const { caption, meta } = parseApprovalCaption(post.caption)
+        return {
+          id: `approval-${post.id}`,
+          approvalId: post.id,
+          date: meta.requestedDate || post.created_at || new Date().toISOString(),
+          platform: post.platform,
+          caption,
+          imageUrl: post.image_url,
+          status: 'pending' as const,
+          feedback: post.feedback,
+        }
+      })
+
+    const approvedItems: CalendarItem[] = posts
+      .filter((post) => post.status === 'scheduled')
+      .map((post) => ({
+        id: `scheduled-${post.id}`,
+        scheduledId: post.id,
+        date: post.scheduled_at || post.date,
         platform: post.platform,
-        caption,
+        caption: post.caption,
         imageUrl: post.image_url,
-        status: 'pending' as const,
-        feedback: post.feedback,
-      }
-    })
+        status: 'approved' as const,
+        autoPostEnabled: post.auto_post_enabled ?? true,
+        postedToFacebook: post.posted_to_facebook ?? false,
+        postedToInstagram: post.posted_to_instagram ?? false,
+        postError: post.post_error,
+        metric: findMetricForPost(post, metrics),
+      }))
 
-  const approvedItems: CalendarItem[] = posts
-    .filter((post) => post.status === 'scheduled')
-    .map((post) => ({
-      id: `scheduled-${post.id}`,
-      scheduledId: post.id,
-      date: post.scheduled_at || post.date,
-      platform: post.platform,
-      caption: post.caption,
-      imageUrl: post.image_url,
-      status: 'approved' as const,
-      autoPostEnabled: post.auto_post_enabled ?? true,
-      postedToFacebook: post.posted_to_facebook ?? false,
-      postedToInstagram: post.posted_to_instagram ?? false,
-      postError: post.post_error,
-      metric: findMetricForPost(post, metrics),
-    }))
-
-  const calendarItems = [...pendingApprovalItems, ...approvedItems].sort((a, b) => a.date.localeCompare(b.date))
+    return [...pendingApprovalItems, ...approvedItems].sort((a, b) => a.date.localeCompare(b.date))
+  }, [approvalPosts, metrics, posts])
 
   const handleApprove = async (approvalId?: string) => {
     if (!approvalId || !onUpdatePost) return
@@ -167,6 +169,8 @@ export function ContentCalendar({ posts, approvalPosts = [], metrics = [], onUpd
                 src={item.imageUrl}
                 alt={item.caption}
                 className="w-full h-full object-cover"
+                loading="lazy"
+                decoding="async"
               />
             </div>
             <CardContent className="p-4 space-y-3">

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import type { User as SupabaseAuthUser } from '@supabase/supabase-js'
 import { useKV } from '@github/spark/hooks'
 import { SignOut, CalendarBlank, CheckSquare, ChartBar, Article } from '@phosphor-icons/react'
 import { toast } from 'sonner'
@@ -7,16 +8,25 @@ import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
 import { LoginPage } from '@/components/LoginPage'
 import { LanguageToggle } from '@/components/LanguageToggle'
-import { ContentCalendar } from '@/components/ContentCalendar'
-import { Approvals } from '@/components/Approvals'
-import { Performance } from '@/components/Performance'
-import { Requests } from '@/components/Requests'
-import { AdminPortal } from '@/components/admin/AdminPortal'
 import { supabase } from '@/lib/supabase'
 import type { Language } from '@/lib/translations'
 import { translations } from '@/lib/translations'
 import { buildApprovalImagePlaceholder, encodeApprovalCaption, parseApprovalCaption, resolveUserRole } from '@/lib/utils'
 import type { User, ScheduledPost, ApprovalPost, PerformanceMetric, ContentRequest, RequestSubmission } from '@/lib/types'
+
+const ContentCalendar = lazy(() => import('@/components/ContentCalendar').then((module) => ({ default: module.ContentCalendar })))
+const Approvals = lazy(() => import('@/components/Approvals').then((module) => ({ default: module.Approvals })))
+const Performance = lazy(() => import('@/components/Performance').then((module) => ({ default: module.Performance })))
+const Requests = lazy(() => import('@/components/Requests').then((module) => ({ default: module.Requests })))
+const AdminPortal = lazy(() => import('@/components/admin/AdminPortal').then((module) => ({ default: module.AdminPortal })))
+
+function SectionLoader() {
+  return (
+    <div className="flex min-h-[240px] items-center justify-center rounded-xl border border-border/50 bg-card/50 text-sm text-muted-foreground">
+      Loading...
+    </div>
+  )
+}
 
 function App() {
   const [user, setUser] = useState<User | null>(null)
@@ -26,74 +36,152 @@ function App() {
   const [performanceMetrics, setPerformanceMetrics] = useState<PerformanceMetric[]>([])
   const [contentRequests, setContentRequests] = useState<ContentRequest[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const currentLanguage = language || 'en'
+  const t = translations[currentLanguage].nav
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        supabase
+    let isMounted = true
+
+    const hydrateUser = async (sessionUser: SupabaseAuthUser) => {
+      const fallbackUser: User = {
+        id: sessionUser.id,
+        email: sessionUser.email || '',
+        name: sessionUser.email?.split('@')[0] || 'User',
+        role: resolveUserRole(undefined, sessionUser.user_metadata?.role, sessionUser.app_metadata?.role),
+      }
+
+      try {
+        const { data: profile, error } = await supabase
           .from('profiles')
           .select('*')
-          .eq('id', session.user.id)
+          .eq('id', sessionUser.id)
           .single()
-          .then(({ data: profile }) => {
-            setUser({
-              id: session.user.id,
-              email: session.user.email!,
-              name: profile?.name || session.user.email?.split('@')[0] || 'User',
-              role: resolveUserRole(profile?.role, session.user.user_metadata?.role, session.user.app_metadata?.role),
-            })
-          })
+
+        if (error) {
+          throw error
+        }
+
+        if (!isMounted) {
+          return
+        }
+
+        setUser({
+          id: sessionUser.id,
+          email: sessionUser.email || '',
+          name: profile?.name || fallbackUser.name,
+          role: resolveUserRole(profile?.role, sessionUser.user_metadata?.role, sessionUser.app_metadata?.role),
+        })
+      } catch {
+        if (!isMounted) {
+          return
+        }
+
+        setUser(fallbackUser)
+        toast.error('We signed you in, but your profile details could not be fully loaded.')
+      } finally {
+        if (isMounted) {
+          setIsLoading(false)
+        }
       }
-      setIsLoading(false)
-    })
+    }
+
+    void supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        if (session?.user) {
+          return hydrateUser(session.user)
+        }
+
+        if (isMounted) {
+          setUser(null)
+          setIsLoading(false)
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setUser(null)
+          setIsLoading(false)
+          toast.error('Unable to restore your session right now.')
+        }
+      })
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
-        supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single()
-          .then(({ data: profile }) => {
-            setUser({
-              id: session.user.id,
-              email: session.user.email!,
-              name: profile?.name || session.user.email?.split('@')[0] || 'User',
-              role: resolveUserRole(profile?.role, session.user.user_metadata?.role, session.user.app_metadata?.role),
-            })
-          })
+        setIsLoading(true)
+        void hydrateUser(session.user)
       } else {
         setUser(null)
+        setIsLoading(false)
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      isMounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   useEffect(() => {
-    if (!user) return
+    if (!user) {
+      setScheduledPosts([])
+      setApprovalPosts([])
+      setPerformanceMetrics([])
+      setContentRequests([])
+      return
+    }
+
+    let isMounted = true
 
     const loadData = async () => {
-      const [scheduledRes, approvalsRes, metricsRes, requestsRes] = await Promise.all([
+      const [scheduledRes, approvalsRes, metricsRes, requestsRes] = await Promise.allSettled([
         supabase.from('scheduled_posts').select('*').eq('user_id', user.id).eq('status', 'scheduled').order('date', { ascending: true }),
         supabase.from('approval_posts').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
         supabase.from('performance_metrics').select('*').eq('user_id', user.id).order('date', { ascending: false }),
         supabase.from('content_requests').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
       ])
 
-      if (scheduledRes.data) setScheduledPosts(scheduledRes.data as ScheduledPost[])
-      if (approvalsRes.data) setApprovalPosts(approvalsRes.data as ApprovalPost[])
-      if (metricsRes.data) setPerformanceMetrics(metricsRes.data as PerformanceMetric[])
-      if (requestsRes.data) setContentRequests(requestsRes.data as ContentRequest[])
+      if (!isMounted) {
+        return
+      }
+
+      const failedSections: string[] = []
+
+      if (scheduledRes.status === 'fulfilled' && !scheduledRes.value.error) {
+        setScheduledPosts((scheduledRes.value.data as ScheduledPost[]) ?? [])
+      } else {
+        failedSections.push('calendar')
+      }
+
+      if (approvalsRes.status === 'fulfilled' && !approvalsRes.value.error) {
+        setApprovalPosts((approvalsRes.value.data as ApprovalPost[]) ?? [])
+      } else {
+        failedSections.push('approvals')
+      }
+
+      if (metricsRes.status === 'fulfilled' && !metricsRes.value.error) {
+        setPerformanceMetrics((metricsRes.value.data as PerformanceMetric[]) ?? [])
+      } else {
+        failedSections.push('metrics')
+      }
+
+      if (requestsRes.status === 'fulfilled' && !requestsRes.value.error) {
+        setContentRequests((requestsRes.value.data as ContentRequest[]) ?? [])
+      } else {
+        failedSections.push('requests')
+      }
+
+      if (failedSections.length > 0) {
+        toast.error(`Some client data could not be loaded (${failedSections.join(', ')}).`)
+      }
     }
 
-    loadData()
-  }, [user])
+    void loadData()
 
-  const currentLanguage = language || 'en'
-  const t = translations[currentLanguage].nav
+    return () => {
+      isMounted = false
+    }
+  }, [user])
 
   const syncRequestStatusFromApproval = async (post: ApprovalPost, approvalStatus: ApprovalPost['status']) => {
     const { meta } = parseApprovalCaption(post.caption)
@@ -264,10 +352,10 @@ function App() {
   }
 
   const handleUpdatePost = async (postId: string, status: ApprovalPost['status'], feedback?: string) => {
-    if (!user) return
+    if (!user) return false
 
     const targetPost = approvalPosts.find((post) => post.id === postId)
-    if (!targetPost) return
+    if (!targetPost) return false
 
     const { error } = await supabase
       .from('approval_posts')
@@ -277,7 +365,7 @@ function App() {
 
     if (error) {
       toast.error(currentLanguage === 'en' ? 'Unable to update approval status.' : 'No se pudo actualizar el estado de aprobación.')
-      return
+      return false
     }
 
     setApprovalPosts((currentPosts) =>
@@ -293,10 +381,12 @@ function App() {
     if (status === 'approved') {
       await addApprovedPostToCalendar(targetPost)
     }
+
+    return true
   }
 
   const handleSubmitRequest = async (request: RequestSubmission) => {
-    if (!user) return
+    if (!user) return false
 
     const { platform, requested_date, ...requestDetails } = request
     const newRequest = {
@@ -314,7 +404,7 @@ function App() {
 
     if (error || !data) {
       toast.error(currentLanguage === 'en' ? 'Unable to submit your request right now.' : 'No se pudo enviar tu solicitud en este momento.')
-      return
+      return false
     }
 
     setContentRequests((current) => [data as ContentRequest, ...current])
@@ -345,12 +435,14 @@ function App() {
       toast.error(currentLanguage === 'en'
         ? 'Your request was saved, but it could not be routed to approvals.'
         : 'Tu solicitud se guardó, pero no pudo enviarse a aprobaciones.')
-      return
+      return false
     }
 
     if (approvalData) {
       setApprovalPosts((current) => [approvalData as ApprovalPost, ...current])
     }
+
+    return true
   }
 
   if (isLoading) {
@@ -373,7 +465,9 @@ function App() {
   if (user.role === 'admin') {
     return (
       <>
-        <AdminPortal user={user} onLogout={handleLogout} />
+        <Suspense fallback={<div className="min-h-screen bg-background flex items-center justify-center text-muted-foreground">Loading...</div>}>
+          <AdminPortal user={user} onLogout={handleLogout} />
+        </Suspense>
         <Toaster />
       </>
     )
@@ -444,37 +538,39 @@ function App() {
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="calendar" className="space-y-4">
-              <ContentCalendar
-                posts={scheduledPosts || []}
-                approvalPosts={approvalPosts || []}
-                metrics={performanceMetrics || []}
-                onUpdatePost={handleUpdatePost}
-                onDeletePost={handleDeleteScheduledPost}
-                language={currentLanguage}
-              />
-            </TabsContent>
+            <Suspense fallback={<SectionLoader />}>
+              <TabsContent value="calendar" className="space-y-4">
+                <ContentCalendar
+                  posts={scheduledPosts}
+                  approvalPosts={approvalPosts}
+                  metrics={performanceMetrics}
+                  onUpdatePost={handleUpdatePost}
+                  onDeletePost={handleDeleteScheduledPost}
+                  language={currentLanguage}
+                />
+              </TabsContent>
 
-            <TabsContent value="approvals" className="space-y-4">
-              <Approvals 
-                posts={approvalPosts || []} 
-                onUpdatePost={handleUpdatePost}
-                language={currentLanguage}
-              />
-            </TabsContent>
+              <TabsContent value="approvals" className="space-y-4">
+                <Approvals
+                  posts={approvalPosts}
+                  onUpdatePost={handleUpdatePost}
+                  language={currentLanguage}
+                />
+              </TabsContent>
 
-            <TabsContent value="performance" className="space-y-4">
-              <Performance metrics={performanceMetrics || []} language={currentLanguage} />
-            </TabsContent>
+              <TabsContent value="performance" className="space-y-4">
+                <Performance metrics={performanceMetrics} language={currentLanguage} />
+              </TabsContent>
 
-            <TabsContent value="requests" className="space-y-4">
-              <Requests 
-                requests={contentRequests || []}
-                onSubmitRequest={handleSubmitRequest}
-                userId={user.id}
-                language={currentLanguage}
-              />
-            </TabsContent>
+              <TabsContent value="requests" className="space-y-4">
+                <Requests
+                  requests={contentRequests}
+                  onSubmitRequest={handleSubmitRequest}
+                  userId={user.id}
+                  language={currentLanguage}
+                />
+              </TabsContent>
+            </Suspense>
           </Tabs>
         </main>
       </div>

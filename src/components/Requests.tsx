@@ -18,7 +18,7 @@ import { uploadImageFile } from '@/lib/uploadImage'
 
 interface RequestsProps {
   requests: ContentRequest[]
-  onSubmitRequest: (request: RequestSubmission) => Promise<void> | void
+  onSubmitRequest: (request: RequestSubmission) => Promise<boolean | void> | boolean | void
   userId: string
   language: Language
 }
@@ -31,6 +31,7 @@ export function Requests({ requests, onSubmitRequest, userId, language }: Reques
   const [requestedDate, setRequestedDate] = useState(() => new Date().toISOString().split('T')[0])
   const [referenceImages, setReferenceImages] = useState<string[]>([])
   const [isDragging, setIsDragging] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const t = translations[language].requests
@@ -105,30 +106,40 @@ export function Requests({ requests, onSubmitRequest, userId, language }: Reques
     setReferenceImages((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!title.trim() || !description.trim()) {
       return
     }
 
-    onSubmitRequest({
-      title,
-      description,
-      type,
-      platform,
-      requested_date: requestedDate || undefined,
-      reference_images: referenceImages.length > 0 ? referenceImages : undefined,
-    })
+    setIsSubmitting(true)
 
-    setTitle('')
-    setDescription('')
-    setType('content')
-    setPlatform('instagram')
-    setRequestedDate(new Date().toISOString().split('T')[0])
-    setReferenceImages([])
-    
-    toast.success(t.success)
+    try {
+      const wasSaved = await onSubmitRequest({
+        title,
+        description,
+        type,
+        platform,
+        requested_date: requestedDate || undefined,
+        reference_images: referenceImages.length > 0 ? referenceImages : undefined,
+      })
+
+      if (!wasSaved) {
+        return
+      }
+
+      setTitle('')
+      setDescription('')
+      setType('content')
+      setPlatform('instagram')
+      setRequestedDate(new Date().toISOString().split('T')[0])
+      setReferenceImages([])
+
+      toast.success(t.success)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const getStatusColor = (status: ContentRequest['status']) => {
@@ -277,6 +288,8 @@ export function Requests({ requests, onSubmitRequest, userId, language }: Reques
                         src={image}
                         alt={`Reference ${index + 1}`}
                         className="w-full h-full object-cover rounded-lg border border-border"
+                        loading="lazy"
+                        decoding="async"
                       />
                       <button
                         type="button"
@@ -294,9 +307,11 @@ export function Requests({ requests, onSubmitRequest, userId, language }: Reques
               )}
             </div>
 
-            <Button type="submit" className="w-full h-11 text-base font-semibold" size="lg">
+            <Button type="submit" className="w-full h-11 text-base font-semibold" size="lg" disabled={isSubmitting}>
               <Plus size={20} weight="bold" />
-              {t.submit}
+              {isSubmitting
+                ? (language === 'en' ? 'Submitting...' : 'Enviando...')
+                : t.submit}
             </Button>
           </form>
         </CardContent>

@@ -13,27 +13,51 @@ import { motion, AnimatePresence } from 'framer-motion'
 
 interface ApprovalsProps {
   posts: ApprovalPost[]
-  onUpdatePost: (postId: string, status: ApprovalPost['status'], feedback?: string) => void
+  onUpdatePost: (postId: string, status: ApprovalPost['status'], feedback?: string) => Promise<boolean | void> | boolean | void
   language: Language
 }
 
 export function Approvals({ posts, onUpdatePost, language }: ApprovalsProps) {
   const [activeComment, setActiveComment] = useState<string | null>(null)
   const [commentText, setCommentText] = useState('')
+  const [pendingActionId, setPendingActionId] = useState<string | null>(null)
 
   const t = translations[language].approvals
 
-  const handleApprove = (postId: string) => {
-    onUpdatePost(postId, 'approved')
-    toast.success(language === 'en' ? 'Post approved!' : '¡Publicación aprobada!')
+  const handleApprove = async (postId: string) => {
+    setPendingActionId(postId)
+
+    try {
+      const updated = await onUpdatePost(postId, 'approved')
+      if (updated) {
+        toast.success(language === 'en' ? 'Post approved!' : '¡Publicación aprobada!')
+      }
+    } finally {
+      setPendingActionId(null)
+    }
   }
 
-  const handleRequestChanges = (postId: string) => {
+  const handleRequestChanges = async (postId: string) => {
     if (activeComment === postId) {
-      onUpdatePost(postId, 'changes-requested', commentText)
-      setActiveComment(null)
-      setCommentText('')
-      toast.success(language === 'en' ? 'Feedback submitted!' : '¡Comentarios enviados!')
+      const feedback = commentText.trim()
+
+      if (!feedback) {
+        toast.error(language === 'en' ? 'Please enter the requested changes first.' : 'Primero agrega los cambios solicitados.')
+        return
+      }
+
+      setPendingActionId(postId)
+
+      try {
+        const updated = await onUpdatePost(postId, 'changes-requested', feedback)
+        if (updated) {
+          setActiveComment(null)
+          setCommentText('')
+          toast.success(language === 'en' ? 'Feedback submitted!' : '¡Comentarios enviados!')
+        }
+      } finally {
+        setPendingActionId(null)
+      }
     } else {
       setActiveComment(postId)
     }
@@ -56,6 +80,7 @@ export function Approvals({ posts, onUpdatePost, language }: ApprovalsProps) {
         {posts.map((post) => {
           const { caption, meta } = parseApprovalCaption(post.caption)
           const isAwaitingAdminReview = meta.requestedBy === 'client'
+          const isBusy = pendingActionId === post.id
 
           return (
             <motion.div
@@ -71,6 +96,8 @@ export function Approvals({ posts, onUpdatePost, language }: ApprovalsProps) {
                     src={post.image_url} 
                     alt={caption}
                     className="w-full h-full object-cover"
+                    loading="lazy"
+                    decoding="async"
                   />
                   {post.status !== 'pending' && (
                     <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center">
@@ -134,6 +161,7 @@ export function Approvals({ posts, onUpdatePost, language }: ApprovalsProps) {
                         onClick={() => handleApprove(post.id)}
                         className="flex-1 gap-2"
                         size="lg"
+                        disabled={isBusy}
                       >
                         <CheckCircle size={20} weight="bold" />
                         {t.approve}
@@ -143,6 +171,7 @@ export function Approvals({ posts, onUpdatePost, language }: ApprovalsProps) {
                         variant="outline"
                         className="flex-1 gap-2 hover:border-primary"
                         size="lg"
+                        disabled={isBusy}
                       >
                         <PencilSimple size={20} weight="bold" />
                         {activeComment === post.id ? t.submit : t.requestChanges}

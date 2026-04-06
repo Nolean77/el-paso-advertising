@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { ChartBar, Eye, Heart, TrendUp } from '@phosphor-icons/react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { translations, type Language } from '@/lib/translations'
@@ -12,18 +13,22 @@ interface PerformanceProps {
 export function Performance({ metrics, language }: PerformanceProps) {
   const t = translations[language].performance
 
-  const totalReach = metrics.reduce((sum, m) => sum + m.reach, 0)
-  const totalLikes = metrics.reduce((sum, m) => sum + m.likes, 0)
-  const avgEngagement = metrics.length > 0 
-    ? metrics.reduce((sum, m) => sum + m.engagement_rate, 0) / metrics.length 
-    : 0
+  const { totalReach, totalLikes, avgEngagement, chartData } = useMemo(() => {
+    const totalReach = metrics.reduce((sum, metric) => sum + metric.reach, 0)
+    const totalLikes = metrics.reduce((sum, metric) => sum + metric.likes, 0)
+    const avgEngagement = metrics.length > 0
+      ? metrics.reduce((sum, metric) => sum + metric.engagement_rate, 0) / metrics.length
+      : 0
 
-  const chartData = metrics.map(m => ({
-    name: m.caption.slice(0, 20) + '...',
-    reach: m.reach,
-    likes: m.likes,
-    engagement: m.engagement_rate,
-  }))
+    const chartData = metrics.slice(0, 12).map((metric) => ({
+      name: metric.caption.length > 20 ? `${metric.caption.slice(0, 20)}...` : metric.caption,
+      reach: metric.reach,
+      likes: metric.likes,
+      engagement: metric.engagement_rate,
+    }))
+
+    return { totalReach, totalLikes, avgEngagement, chartData }
+  }, [metrics])
 
   if (metrics.length === 0) {
     return (

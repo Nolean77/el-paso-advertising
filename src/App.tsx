@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import type { User as SupabaseAuthUser } from '@supabase/supabase-js'
 import { useKV } from '@github/spark/hooks'
 import { SignOut, CalendarBlank, CheckSquare, ChartBar, Article } from '@phosphor-icons/react'
@@ -11,15 +11,14 @@ import { LanguageToggle } from '@/components/LanguageToggle'
 import { supabase } from '@/lib/supabase'
 import type { Language } from '@/lib/translations'
 import { translations } from '@/lib/translations'
+import { ContentCalendar } from '@/components/ContentCalendar'
+import { Approvals } from '@/components/Approvals'
+import { Performance } from '@/components/Performance'
+import { Requests } from '@/components/Requests'
+import { AdminPortal } from '@/components/admin/AdminPortal'
 import { buildApprovalImagePlaceholder, encodeApprovalCaption, findRelevantMetricForScheduledPost, isScheduledPostPublished, parseApprovalCaption, resolveUserRole } from '@/lib/utils'
 import { syncFacebookMetricsForClient } from '@/lib/metaMetrics'
 import type { User, ScheduledPost, ApprovalPost, PerformanceMetric, ContentRequest, RequestSubmission } from '@/lib/types'
-
-const ContentCalendar = lazy(() => import('@/components/ContentCalendar').then((module) => ({ default: module.ContentCalendar })))
-const Approvals = lazy(() => import('@/components/Approvals').then((module) => ({ default: module.Approvals })))
-const Performance = lazy(() => import('@/components/Performance').then((module) => ({ default: module.Performance })))
-const Requests = lazy(() => import('@/components/Requests').then((module) => ({ default: module.Requests })))
-const AdminPortal = lazy(() => import('@/components/admin/AdminPortal').then((module) => ({ default: module.AdminPortal })))
 
 function SectionLoader() {
   return (

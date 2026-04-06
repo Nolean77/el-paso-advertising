@@ -115,6 +115,55 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
       return
     }
 
+    const scheduledPostsChannel = supabase
+      .channel(`admin-calendar-posts-${selectedClientId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'scheduled_posts',
+          filter: `user_id=eq.${selectedClientId}`,
+        },
+        async () => {
+          const { data, error } = await supabase
+            .from('scheduled_posts')
+            .select('*')
+            .eq('user_id', selectedClientId)
+            .eq('status', 'scheduled')
+            .order('date', { ascending: true })
+
+          if (!error) {
+            setScheduledPosts((data as ScheduledPost[]) ?? [])
+          }
+        }
+      )
+      .subscribe()
+
+    const approvalPostsChannel = supabase
+      .channel(`admin-calendar-approvals-${selectedClientId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'approval_posts',
+          filter: `user_id=eq.${selectedClientId}`,
+        },
+        async () => {
+          const { data, error } = await supabase
+            .from('approval_posts')
+            .select('*')
+            .eq('user_id', selectedClientId)
+            .order('created_at', { ascending: false })
+
+          if (!error) {
+            setApprovalPosts((data as ApprovalPost[]) ?? [])
+          }
+        }
+      )
+      .subscribe()
+
     const metricsChannel = supabase
       .channel(`admin-calendar-metrics-${selectedClientId}`)
       .on(
@@ -148,6 +197,8 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
       .subscribe()
 
     return () => {
+      void supabase.removeChannel(scheduledPostsChannel)
+      void supabase.removeChannel(approvalPostsChannel)
       void supabase.removeChannel(metricsChannel)
     }
   }, [selectedClientId])

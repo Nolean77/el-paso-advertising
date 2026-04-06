@@ -178,6 +178,59 @@ function App() {
 
     void loadData()
 
+    const scheduledPostsChannel = supabase
+      .channel(`scheduled-posts-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'scheduled_posts',
+          filter: `user_id=eq.${user.id}`,
+        },
+        async () => {
+          const { data, error } = await supabase
+            .from('scheduled_posts')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('status', 'scheduled')
+            .order('date', { ascending: true })
+
+          if (!isMounted || error) {
+            return
+          }
+
+          setScheduledPosts((data as ScheduledPost[]) ?? [])
+        }
+      )
+      .subscribe()
+
+    const approvalPostsChannel = supabase
+      .channel(`approval-posts-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'approval_posts',
+          filter: `user_id=eq.${user.id}`,
+        },
+        async () => {
+          const { data, error } = await supabase
+            .from('approval_posts')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false })
+
+          if (!isMounted || error) {
+            return
+          }
+
+          setApprovalPosts((data as ApprovalPost[]) ?? [])
+        }
+      )
+      .subscribe()
+
     const metricsChannel = supabase
       .channel(`performance-metrics-${user.id}`)
       .on(
@@ -206,6 +259,8 @@ function App() {
 
     return () => {
       isMounted = false
+      void supabase.removeChannel(scheduledPostsChannel)
+      void supabase.removeChannel(approvalPostsChannel)
       void supabase.removeChannel(metricsChannel)
     }
   }, [user])

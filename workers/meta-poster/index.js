@@ -640,10 +640,9 @@ async function resolveFacebookPostId(facebookPostId, pageAccessToken) {
   }
 }
 
-async function fetchFacebookPostInsights(facebookPostId, pageAccessToken) {
+async function fetchFacebookPostInsights(facebookPostId, accessToken) {
   const url = new URL(`${META_GRAPH_BASE}/${facebookPostId}/insights`)
-  url.searchParams.set('metric', 'post_impressions_unique,post_engaged_users')
-  url.searchParams.set('access_token', pageAccessToken)
+  url.searchParams.set('access_token', accessToken)
 
   const response = await fetch(url)
   const json = await readMetaResponseBody(response)
@@ -655,8 +654,18 @@ async function fetchFacebookPostInsights(facebookPostId, pageAccessToken) {
   const insights = Array.isArray(json.data) ? json.data : []
 
   return {
-    reach: extractMetricValue(insights, 'post_impressions_unique'),
-    engagedUsers: extractMetricValue(insights, 'post_engaged_users'),
+    reach: extractFirstMetricValue(insights, [
+      'post_impressions_unique',
+      'post_impressions',
+      'post_impressions_paid_unique',
+      'post_impressions_organic_unique',
+    ]),
+    engagedUsers: extractFirstMetricValue(insights, [
+      'post_engaged_users',
+      'post_clicks',
+      'post_activity_by_action_type',
+      'post_reactions_by_type_total',
+    ]),
   }
 }
 
@@ -821,7 +830,22 @@ function extractMetricValue(metrics, name) {
     return latestValue
   }
 
+  if (latestValue && typeof latestValue === 'object') {
+    return Object.values(latestValue).reduce((sum, value) => sum + (Number(value) || 0), 0)
+  }
+
   return Number(latestValue) || 0
+}
+
+function extractFirstMetricValue(metrics, names) {
+  for (const name of names) {
+    const value = extractMetricValue(metrics, name)
+    if (value > 0) {
+      return value
+    }
+  }
+
+  return 0
 }
 
 function jsonResponse(payload, status = 200, headers = {}) {

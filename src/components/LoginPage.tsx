@@ -55,7 +55,7 @@ export function LoginPage({ onLogin, language, onLanguageToggle }: LoginPageProp
           role: resolveUserRole(profile?.role, data.user.user_metadata?.role, data.user.app_metadata?.role),
         })
       }
-    } catch (err) {
+    } catch {
       setError(t.error)
     } finally {
       setIsLoading(false)

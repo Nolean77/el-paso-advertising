@@ -39,8 +39,6 @@ export function Approvals({ posts, onUpdatePost, language }: ApprovalsProps) {
     }
   }
 
-  const pendingPosts = posts.filter(p => p.status === 'pending')
-
   if (posts.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">

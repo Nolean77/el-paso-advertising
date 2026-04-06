@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Trash } from '@phosphor-icons/react'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
@@ -35,7 +35,7 @@ export function MetricsEntry({ selectedClientId, selectedClientName }: MetricsEn
   const [deletingMetricId, setDeletingMetricId] = useState<string | null>(null)
   const [metrics, setMetrics] = useState<PerformanceMetric[]>([])
 
-  const loadMetrics = async () => {
+  const loadMetrics = useCallback(async () => {
     if (!selectedClientId) {
       setMetrics([])
       return
@@ -56,11 +56,11 @@ export function MetricsEntry({ selectedClientId, selectedClientName }: MetricsEn
     }
 
     setMetrics((data as PerformanceMetric[]) ?? [])
-  }
+  }, [selectedClientId])
 
   useEffect(() => {
-    loadMetrics()
-  }, [selectedClientId])
+    void loadMetrics()
+  }, [loadMetrics])
 
   const handlePullFacebookMetrics = async () => {
     if (!selectedClientId) {
@@ -169,9 +169,9 @@ export function MetricsEntry({ selectedClientId, selectedClientName }: MetricsEn
       platform,
       caption,
       date,
-      reach: parseInt(reach),
-      likes: parseInt(likes),
-      engagement_rate: parseFloat(engagementRate),
+      reach: Number.parseInt(reach, 10),
+      likes: Number.parseInt(likes, 10),
+      engagement_rate: Number.parseFloat(engagementRate),
     })
     setSaving(false)
 

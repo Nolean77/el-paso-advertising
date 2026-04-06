@@ -4,7 +4,6 @@ const META_DIALOG_REDIRECT_PATH = '/oauth/meta/callback'
 const METRICS_SYNC_PATH = '/metrics/sync'
 const BLOCKED_FACEBOOK_PAGE_IDS = new Set(['433627129826098'])
 const REQUIRED_META_SCOPES = ['pages_manage_posts', 'pages_read_engagement', 'pages_show_list', 'read_insights']
-const REQUIRED_METRICS_SCOPES = ['pages_read_engagement', 'read_insights']
 const DEFAULT_ALLOWED_ORIGINS = new Set([
   'http://localhost:5173',
   'http://127.0.0.1:5173',

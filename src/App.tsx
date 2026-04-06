@@ -216,7 +216,7 @@ function App() {
     }
 
     const needsMetricSync = scheduledPosts.some((post) =>
-      post.platform === 'facebook' &&
+      Boolean(post.posted_to_facebook || post.facebook_post_id) &&
       isScheduledPostPublished(post) &&
       !findRelevantMetricForScheduledPost(post, performanceMetrics)
     )

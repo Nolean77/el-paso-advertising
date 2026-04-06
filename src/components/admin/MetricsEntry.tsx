@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Performance } from '@/components/Performance'
 import type { PerformanceMetric } from '@/lib/types'
-import { META_WORKER_BASE_URL, syncFacebookMetricsForClient } from '@/lib/metaMetrics'
+import { META_WORKER_BASE_URL, fetchPerformanceMetricsForClient, syncFacebookMetricsForClient } from '@/lib/metaMetrics'
 import { toast } from 'sonner'
 
 interface MetricsEntryProps {
@@ -37,25 +37,74 @@ export function MetricsEntry({ selectedClientId, selectedClientName }: MetricsEn
     }
 
     setLoadingMetrics(true)
-    const { data, error } = await supabase
-      .from('performance_metrics')
-      .select('*')
-      .eq('user_id', selectedClientId)
-      .order('date', { ascending: false })
 
-    setLoadingMetrics(false)
+    try {
+      const { data, error } = await supabase
+        .from('performance_metrics')
+        .select('*')
+        .eq('user_id', selectedClientId)
+        .order('date', { ascending: false })
 
-    if (error) {
+      if (error) {
+        throw error
+      }
+
+      const directMetrics = (data as PerformanceMetric[]) ?? []
+
+      if (directMetrics.length > 0 || !META_WORKER_BASE_URL) {
+        setMetrics(directMetrics)
+        return
+      }
+
+      const fallbackMetrics = await fetchPerformanceMetricsForClient(selectedClientId)
+      setMetrics(fallbackMetrics)
+    } catch {
+      if (META_WORKER_BASE_URL) {
+        try {
+          const fallbackMetrics = await fetchPerformanceMetricsForClient(selectedClientId)
+          setMetrics(fallbackMetrics)
+          return
+        } catch {
+          // Fall through to the visible error below.
+        }
+      }
+
+      setMetrics([])
       toast.error('Unable to load metrics for this client.')
-      return
+    } finally {
+      setLoadingMetrics(false)
     }
-
-    setMetrics((data as PerformanceMetric[]) ?? [])
   }, [selectedClientId])
 
   useEffect(() => {
     void loadMetrics()
   }, [loadMetrics])
+
+  useEffect(() => {
+    if (!selectedClientId) {
+      return
+    }
+
+    const metricsChannel = supabase
+      .channel(`admin-metrics-${selectedClientId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'performance_metrics',
+          filter: `user_id=eq.${selectedClientId}`,
+        },
+        () => {
+          void loadMetrics()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(metricsChannel)
+    }
+  }, [loadMetrics, selectedClientId])
 
   useEffect(() => {
     if (!selectedClientId || !META_WORKER_BASE_URL) {

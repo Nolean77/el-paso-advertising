@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { ContentCalendar } from '@/components/ContentCalendar'
 import { supabase } from '@/lib/supabase'
 import { buildApprovalImagePlaceholder, findRelevantMetricForScheduledPost, isScheduledPostPublished, parseApprovalCaption } from '@/lib/utils'
-import { syncFacebookMetricsForClient } from '@/lib/metaMetrics'
+import { META_WORKER_BASE_URL, fetchPerformanceMetricsForClient, syncFacebookMetricsForClient } from '@/lib/metaMetrics'
 import type { ApprovalPost, ScheduledPost, PerformanceMetric } from '@/lib/types'
 
 interface AdminCalendarProps {
@@ -33,9 +33,19 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
         supabase.from('performance_metrics').select('*').eq('user_id', selectedClientId).order('date', { ascending: false }),
       ])
 
+      let nextMetrics = (metricsRes.data as PerformanceMetric[]) ?? []
+
+      if ((metricsRes.error || nextMetrics.length === 0) && META_WORKER_BASE_URL) {
+        try {
+          nextMetrics = await fetchPerformanceMetricsForClient(selectedClientId)
+        } catch {
+          // Keep the calendar usable even if the fallback load fails.
+        }
+      }
+
       setScheduledPosts((scheduledRes.data as ScheduledPost[]) ?? [])
       setApprovalPosts((approvalsRes.data as ApprovalPost[]) ?? [])
-      setPerformanceMetrics((metricsRes.data as PerformanceMetric[]) ?? [])
+      setPerformanceMetrics(nextMetrics)
       setLoading(false)
     }
 
@@ -48,7 +58,7 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
     }
 
     const needsMetricSync = scheduledPosts.some((post) =>
-      post.platform === 'facebook' &&
+      Boolean(post.posted_to_facebook || post.facebook_post_id) &&
       isScheduledPostPublished(post) &&
       !findRelevantMetricForScheduledPost(post, performanceMetrics)
     )
@@ -73,8 +83,20 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
           .eq('user_id', selectedClientId)
           .order('date', { ascending: false })
 
-        if (!isCancelled && !error) {
-          setPerformanceMetrics((data as PerformanceMetric[]) ?? [])
+        if (isCancelled) {
+          return
+        }
+
+        const directMetrics = !error ? ((data as PerformanceMetric[]) ?? []) : []
+
+        if (directMetrics.length > 0 || !META_WORKER_BASE_URL) {
+          setPerformanceMetrics(directMetrics)
+          return
+        }
+
+        const fallbackMetrics = await fetchPerformanceMetricsForClient(selectedClientId)
+        if (!isCancelled) {
+          setPerformanceMetrics(fallbackMetrics)
         }
       } catch {
         // Keep auto-sync quiet in the admin calendar.
@@ -87,6 +109,48 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
       isCancelled = true
     }
   }, [performanceMetrics, scheduledPosts, selectedClientId])
+
+  useEffect(() => {
+    if (!selectedClientId) {
+      return
+    }
+
+    const metricsChannel = supabase
+      .channel(`admin-calendar-metrics-${selectedClientId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'performance_metrics',
+          filter: `user_id=eq.${selectedClientId}`,
+        },
+        async () => {
+          const { data, error } = await supabase
+            .from('performance_metrics')
+            .select('*')
+            .eq('user_id', selectedClientId)
+            .order('date', { ascending: false })
+
+          let nextMetrics = !error ? ((data as PerformanceMetric[]) ?? []) : []
+
+          if ((error || nextMetrics.length === 0) && META_WORKER_BASE_URL) {
+            try {
+              nextMetrics = await fetchPerformanceMetricsForClient(selectedClientId)
+            } catch {
+              // Keep the last calendar state if the fallback request fails.
+            }
+          }
+
+          setPerformanceMetrics(nextMetrics)
+        }
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(metricsChannel)
+    }
+  }, [selectedClientId])
 
   const syncRequestStatusFromApproval = async (post: ApprovalPost, approvalStatus: ApprovalPost['status']) => {
     const { meta } = parseApprovalCaption(post.caption)

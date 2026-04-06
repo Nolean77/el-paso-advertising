@@ -1,6 +1,7 @@
 const META_API_VERSION = 'v19.0'
 const META_GRAPH_BASE = `https://graph.facebook.com/${META_API_VERSION}`
 const META_DIALOG_REDIRECT_PATH = '/oauth/meta/callback'
+const METRICS_LIST_PATH = '/metrics'
 const METRICS_SYNC_PATH = '/metrics/sync'
 const BLOCKED_FACEBOOK_PAGE_IDS = new Set(['433627129826098'])
 const REQUIRED_META_SCOPES = ['pages_manage_posts', 'pages_read_engagement', 'pages_show_list', 'read_insights']
@@ -37,6 +38,10 @@ export default {
 
     if (request.method === 'GET' && url.pathname === '/health') {
       return Response.json({ ok: true }, { headers: corsHeaders })
+    }
+
+    if (request.method === 'GET' && url.pathname === METRICS_LIST_PATH) {
+      return handleMetricsListRequest(request, env, corsHeaders)
     }
 
     if (request.method === 'POST' && url.pathname === METRICS_SYNC_PATH) {
@@ -453,6 +458,33 @@ async function publishToInstagram(env, post, connection) {
   }
 }
 
+async function handleMetricsListRequest(request, env, corsHeaders) {
+  try {
+    const url = new URL(request.url)
+    const clientId = typeof url.searchParams.get('clientId') === 'string'
+      ? url.searchParams.get('clientId').trim()
+      : ''
+    const platform = typeof url.searchParams.get('platform') === 'string'
+      ? url.searchParams.get('platform').trim().toLowerCase()
+      : ''
+
+    if (!clientId) {
+      return jsonResponse({ ok: false, error: 'clientId is required.' }, 400, corsHeaders)
+    }
+
+    const metrics = await listPerformanceMetrics(env, {
+      clientId,
+      platform: platform || undefined,
+    })
+
+    return jsonResponse({ ok: true, metrics }, 200, corsHeaders)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to load performance metrics.'
+    console.error('Metrics list request failed:', message)
+    return jsonResponse({ ok: false, error: message }, 500, corsHeaders)
+  }
+}
+
 async function handleMetricsSyncRequest(request, env, corsHeaders) {
   try {
     const body = await request.json().catch(() => ({}))
@@ -543,10 +575,25 @@ async function syncFacebookMetrics(env, options = {}) {
   }
 }
 
+async function listPerformanceMetrics(env, options = {}) {
+  const query = {
+    select: '*',
+    user_id: `eq.${options.clientId}`,
+    order: 'date.desc',
+    limit: '200',
+  }
+
+  if (options.platform) {
+    query.platform = `eq.${options.platform}`
+  }
+
+  const rows = await querySupabase(env, '/rest/v1/performance_metrics', query)
+  return Array.isArray(rows) ? rows : []
+}
+
 async function getPostedFacebookPostsForMetrics(env, clientId) {
   const query = {
     select: 'id,user_id,caption,date,posted_at,facebook_post_id',
-    platform: 'eq.facebook',
     posted_to_facebook: 'eq.true',
     facebook_post_id: 'not.is.null',
     order: 'posted_at.desc.nullslast,date.desc',

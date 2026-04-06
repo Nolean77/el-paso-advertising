@@ -130,6 +130,7 @@ DROP POLICY IF EXISTS "Users can view own performance metrics" ON public.perform
 DROP POLICY IF EXISTS "Admins can view all performance metrics" ON public.performance_metrics;
 DROP POLICY IF EXISTS "Admins can insert performance metrics" ON public.performance_metrics;
 DROP POLICY IF EXISTS "Admins can update performance metrics" ON public.performance_metrics;
+DROP POLICY IF EXISTS "Admins can delete performance metrics" ON public.performance_metrics;
 
 CREATE POLICY "Users can view own performance metrics" ON public.performance_metrics
   FOR SELECT USING (auth.uid() = user_id);
@@ -143,6 +144,9 @@ CREATE POLICY "Admins can insert performance metrics" ON public.performance_metr
 CREATE POLICY "Admins can update performance metrics" ON public.performance_metrics
   FOR UPDATE USING (public.is_admin())
   WITH CHECK (public.is_admin());
+
+CREATE POLICY "Admins can delete performance metrics" ON public.performance_metrics
+  FOR DELETE USING (public.is_admin());
 
 DROP POLICY IF EXISTS "Users can view own content requests" ON public.content_requests;
 DROP POLICY IF EXISTS "Users can insert own content requests" ON public.content_requests;

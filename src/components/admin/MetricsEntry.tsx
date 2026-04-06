@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Trash } from '@phosphor-icons/react'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,6 +32,7 @@ export function MetricsEntry({ selectedClientId, selectedClientName }: MetricsEn
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [loadingMetrics, setLoadingMetrics] = useState(false)
+  const [deletingMetricId, setDeletingMetricId] = useState<string | null>(null)
   const [metrics, setMetrics] = useState<PerformanceMetric[]>([])
 
   const loadMetrics = async () => {
@@ -113,6 +115,39 @@ export function MetricsEntry({ selectedClientId, selectedClientName }: MetricsEn
     } finally {
       setSyncing(false)
     }
+  }
+
+  const handleDeleteMetric = async (metric: PerformanceMetric) => {
+    if (!selectedClientId) {
+      toast.error('Select a client from the portal header first.')
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Remove the ${metric.platform} metric entry from ${metric.date}?`
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    setDeletingMetricId(metric.id)
+
+    const { error } = await supabase
+      .from('performance_metrics')
+      .delete()
+      .eq('id', metric.id)
+      .eq('user_id', selectedClientId)
+
+    setDeletingMetricId(null)
+
+    if (error) {
+      toast.error('Unable to delete this metric entry. Make sure the latest admin RLS SQL patch has been applied.')
+      return
+    }
+
+    setMetrics((currentMetrics) => currentMetrics.filter((entry) => entry.id !== metric.id))
+    toast.success('Metric entry removed.')
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -244,7 +279,7 @@ export function MetricsEntry({ selectedClientId, selectedClientName }: MetricsEn
           </Card>
         </div>
 
-        <div className="min-w-0">
+        <div className="min-w-0 space-y-6">
           {loadingMetrics ? (
             <div className="rounded-xl border border-border/50 bg-card/50 p-6 text-sm text-muted-foreground">
               Loading metrics...
@@ -252,6 +287,49 @@ export function MetricsEntry({ selectedClientId, selectedClientName }: MetricsEn
           ) : (
             <Performance metrics={metrics} language="en" />
           )}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Metric Entries</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {metrics.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No metric entries are available for this client yet.</p>
+              ) : (
+                metrics.map((metric) => (
+                  <div
+                    key={metric.id}
+                    className="flex flex-col gap-3 rounded-lg border border-border/60 bg-muted/20 p-3 md:flex-row md:items-start md:justify-between"
+                  >
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold capitalize text-foreground">{metric.platform}</span>
+                        <span className="text-xs text-muted-foreground">{metric.date}</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground line-clamp-2 whitespace-pre-line">{metric.caption}</p>
+                      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                        <span>Reach: <span className="font-medium text-foreground">{metric.reach.toLocaleString()}</span></span>
+                        <span>Likes: <span className="font-medium text-foreground">{metric.likes.toLocaleString()}</span></span>
+                        <span>Engagement: <span className="font-medium text-foreground">{metric.engagement_rate.toFixed(1)}%</span></span>
+                      </div>
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-2 text-destructive hover:text-destructive"
+                      disabled={deletingMetricId === metric.id}
+                      onClick={() => handleDeleteMetric(metric)}
+                    >
+                      <Trash size={16} weight="bold" />
+                      {deletingMetricId === metric.id ? 'Removing...' : 'Remove'}
+                    </Button>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

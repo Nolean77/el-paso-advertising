@@ -86,7 +86,7 @@ async function handleOAuthCallback(request, env) {
       throw new Error('No Facebook pages were found for this account.')
     }
 
-    await updateMetaConnectionsForClient(env, state, pages, tokenExpiresAt)
+    await updateMetaConnectionsForClient(env, state, pages, tokenExpiresAt, longLivedUserToken.access_token)
 
     return redirectToPortal(env, { meta_connected: 'true' })
   } catch (error) {
@@ -306,8 +306,13 @@ async function publishToFacebook(env, post, connection) {
         ? `${META_GRAPH_BASE}/${connection.facebook_page_id}/photos`
         : `${META_GRAPH_BASE}/${connection.facebook_page_id}/feed`
 
+    const { pageAccessToken } = parseStoredMetaTokens(connection.page_access_token)
+    if (!pageAccessToken) {
+      throw new Error(MESSAGE.noActiveConnection)
+    }
+
     const payload = new URLSearchParams()
-    payload.set('access_token', connection.page_access_token)
+    payload.set('access_token', pageAccessToken)
 
     if (isVideo) {
       payload.set('description', post.caption || '')
@@ -377,8 +382,13 @@ async function publishToInstagram(env, post, connection) {
 
     await assertPublicMediaUrl(post.image_url, `instagram post ${post.id}`)
 
+    const { pageAccessToken } = parseStoredMetaTokens(connection.page_access_token)
+    if (!pageAccessToken) {
+      throw new Error(MESSAGE.noActiveConnection)
+    }
+
     const containerPayload = new URLSearchParams()
-    containerPayload.set('access_token', connection.page_access_token)
+    containerPayload.set('access_token', pageAccessToken)
     containerPayload.set('caption', post.caption || '')
 
     if (isVideo) {
@@ -401,7 +411,7 @@ async function publishToInstagram(env, post, connection) {
     }
 
     const publishPayload = new URLSearchParams()
-    publishPayload.set('access_token', connection.page_access_token)
+    publishPayload.set('access_token', pageAccessToken)
     publishPayload.set('creation_id', containerData.id)
 
     const publishRes = await fetch(`${META_GRAPH_BASE}/${connection.instagram_account_id}/media_publish`, {
@@ -496,8 +506,17 @@ async function syncFacebookMetrics(env, options = {}) {
         continue
       }
 
-      await assertFacebookMetricsPermissions(env, connection.page_access_token)
-      const metric = await fetchFacebookPostMetrics(post.facebook_post_id, connection.page_access_token)
+      const { pageAccessToken, userAccessToken } = parseStoredMetaTokens(connection.page_access_token)
+      const metricsAccessToken = userAccessToken || pageAccessToken
+
+      if (!metricsAccessToken) {
+        skippedCount += 1
+        errors.push({ postId: post.id, message: MESSAGE.noActiveConnection })
+        continue
+      }
+
+      await assertFacebookMetricsPermissions(env, metricsAccessToken)
+      const metric = await fetchFacebookPostMetrics(post.facebook_post_id, metricsAccessToken)
       const metricDate = (metric.createdTime || post.posted_at || post.date || new Date().toISOString()).split('T')[0]
 
       await upsertPerformanceMetric(env, {
@@ -661,7 +680,7 @@ function buildFacebookMetricsError(status, json) {
     return new Error(MESSAGE.facebookMetricsPermissionRequired)
   }
 
-  if (/read_insights|insights/i.test(rawMessage)) {
+  if (/requires the 'read_insights' permission|read_insights permission/i.test(rawMessage)) {
     return new Error(MESSAGE.readInsightsReconnectRequired)
   }
 
@@ -670,7 +689,7 @@ function buildFacebookMetricsError(status, json) {
 
 function isFacebookPermissionError(error) {
   const message = error instanceof Error ? error.message : String(error || '')
-  return /pages_read_engagement|page public content access|read_insights|insights/i.test(message)
+  return /pages_read_engagement|page public content access|read_insights permission/i.test(message)
 }
 
 async function upsertPerformanceMetric(env, metric) {
@@ -701,9 +720,14 @@ async function upsertPerformanceMetric(env, metric) {
   return insertSupabase(env, '/rest/v1/performance_metrics', payload)
 }
 
-async function assertFacebookMetricsPermissions(env, pageAccessToken) {
-  const tokenInfo = await debugMetaToken(env, pageAccessToken)
+async function assertFacebookMetricsPermissions(env, accessToken) {
+  const tokenInfo = await debugMetaToken(env, accessToken)
   const grantedScopes = Array.isArray(tokenInfo?.scopes) ? tokenInfo.scopes : []
+
+  if (grantedScopes.length === 0) {
+    return
+  }
+
   const missingScopes = REQUIRED_METRICS_SCOPES.filter((scope) => !grantedScopes.includes(scope))
 
   if (missingScopes.length > 0) {
@@ -742,6 +766,45 @@ async function getGrantedPermissions(accessToken) {
   return Array.isArray(json.data)
     ? json.data.filter((entry) => entry?.status === 'granted').map((entry) => entry.permission)
     : []
+}
+
+function parseStoredMetaTokens(tokenValue) {
+  const rawValue = String(tokenValue || '').trim()
+
+  if (!rawValue) {
+    return {
+      pageAccessToken: '',
+      userAccessToken: '',
+    }
+  }
+
+  if (rawValue.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(rawValue)
+      return {
+        pageAccessToken: String(parsed.pageAccessToken || parsed.page_access_token || ''),
+        userAccessToken: String(parsed.userAccessToken || parsed.user_access_token || ''),
+      }
+    } catch {
+      // fall back to legacy raw token storage
+    }
+  }
+
+  return {
+    pageAccessToken: rawValue,
+    userAccessToken: '',
+  }
+}
+
+function serializeStoredMetaTokens({ pageAccessToken, userAccessToken }) {
+  if (!userAccessToken) {
+    return String(pageAccessToken || '')
+  }
+
+  return JSON.stringify({
+    pageAccessToken: String(pageAccessToken || ''),
+    userAccessToken: String(userAccessToken || ''),
+  })
 }
 
 function normalizeMetricCaption(caption) {
@@ -823,7 +886,9 @@ async function checkDailyPostLimit(env, clientId, platform) {
 
 async function tryRefreshConnectionToken(env, connection, post) {
   try {
-    const refreshed = await exchangeForLongLivedUserToken(env, connection.page_access_token)
+    const currentTokens = parseStoredMetaTokens(connection.page_access_token)
+    const refreshSourceToken = currentTokens.userAccessToken || currentTokens.pageAccessToken
+    const refreshed = await exchangeForLongLivedUserToken(env, refreshSourceToken)
 
     if (!refreshed?.access_token) {
       return connection
@@ -834,9 +899,27 @@ async function tryRefreshConnectionToken(env, connection, post) {
       ? refreshed.expires_in
       : 5184000 // 60 days
 
+    let nextPageAccessToken = currentTokens.pageAccessToken
+
+    try {
+      const refreshedPages = await getUserPages(refreshed.access_token)
+      const matchingPage = Array.isArray(refreshedPages)
+        ? refreshedPages.find((page) => String(page.id) === String(connection.facebook_page_id))
+        : null
+
+      if (matchingPage?.access_token) {
+        nextPageAccessToken = matchingPage.access_token
+      }
+    } catch (pageRefreshError) {
+      console.warn('Unable to refresh page access token after Meta token refresh:', pageRefreshError?.message || pageRefreshError)
+    }
+
     const tokenExpiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString()
     const updated = {
-      page_access_token: refreshed.access_token,
+      page_access_token: serializeStoredMetaTokens({
+        pageAccessToken: nextPageAccessToken,
+        userAccessToken: refreshed.access_token,
+      }),
       token_expires_at: tokenExpiresAt,
       connected_at: new Date().toISOString(),
     }
@@ -891,7 +974,7 @@ async function getActiveMetaConnection(env, clientId) {
   return Array.isArray(rows) && rows.length > 0 ? rows[0] : null
 }
 
-async function updateMetaConnectionsForClient(env, clientId, pages, tokenExpiresAt) {
+async function updateMetaConnectionsForClient(env, clientId, pages, tokenExpiresAt, userAccessToken) {
   const previousActive = await getActiveMetaConnection(env, clientId)
   const allowedPages = (pages || []).filter((page) => !BLOCKED_FACEBOOK_PAGE_IDS.has(String(page.id)))
 
@@ -914,7 +997,10 @@ async function updateMetaConnectionsForClient(env, clientId, pages, tokenExpires
       facebook_page_id: page.id,
       facebook_page_name: page.name || null,
       instagram_account_id: page.instagram_business_account?.id || null,
-      page_access_token: page.access_token,
+      page_access_token: serializeStoredMetaTokens({
+        pageAccessToken: page.access_token,
+        userAccessToken,
+      }),
       token_expires_at: tokenExpiresAt,
       connected_at: new Date().toISOString(),
       is_active: String(page.id) === String(preferredPage?.id),

@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { ContentCalendar } from '@/components/ContentCalendar'
 import { supabase } from '@/lib/supabase'
 import { buildApprovalImagePlaceholder, parseApprovalCaption } from '@/lib/utils'
-import type { ApprovalPost, ScheduledPost } from '@/lib/types'
+import type { ApprovalPost, ScheduledPost, PerformanceMetric } from '@/lib/types'
 
 interface AdminCalendarProps {
   selectedClientId?: string
@@ -13,24 +13,28 @@ interface AdminCalendarProps {
 export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCalendarProps) {
   const [scheduledPosts, setScheduledPosts] = useState<ScheduledPost[]>([])
   const [approvalPosts, setApprovalPosts] = useState<ApprovalPost[]>([])
+  const [performanceMetrics, setPerformanceMetrics] = useState<PerformanceMetric[]>([])
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (!selectedClientId) {
       setScheduledPosts([])
       setApprovalPosts([])
+      setPerformanceMetrics([])
       return
     }
 
     const loadData = async () => {
       setLoading(true)
-      const [scheduledRes, approvalsRes] = await Promise.all([
+      const [scheduledRes, approvalsRes, metricsRes] = await Promise.all([
         supabase.from('scheduled_posts').select('*').eq('user_id', selectedClientId).eq('status', 'scheduled').order('date', { ascending: true }),
         supabase.from('approval_posts').select('*').eq('user_id', selectedClientId).order('created_at', { ascending: false }),
+        supabase.from('performance_metrics').select('*').eq('user_id', selectedClientId).order('date', { ascending: false }),
       ])
 
       setScheduledPosts((scheduledRes.data as ScheduledPost[]) ?? [])
       setApprovalPosts((approvalsRes.data as ApprovalPost[]) ?? [])
+      setPerformanceMetrics((metricsRes.data as PerformanceMetric[]) ?? [])
       setLoading(false)
     }
 
@@ -179,6 +183,7 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
         <ContentCalendar
           posts={scheduledPosts}
           approvalPosts={approvalPosts}
+          metrics={performanceMetrics}
           onUpdatePost={handleUpdatePost}
           onDeletePost={handleDeleteScheduledPost}
           language="en"

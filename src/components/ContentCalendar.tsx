@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { PlatformIcon } from '@/components/PlatformIcon'
 import { translations, type Language } from '@/lib/translations'
-import type { ScheduledPost, ApprovalPost } from '@/lib/types'
+import type { ScheduledPost, ApprovalPost, PerformanceMetric } from '@/lib/types'
 import { parseApprovalCaption } from '@/lib/utils'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -14,6 +14,7 @@ import { es } from 'date-fns/locale'
 interface ContentCalendarProps {
   posts: ScheduledPost[]
   approvalPosts?: ApprovalPost[]
+  metrics?: PerformanceMetric[]
   onUpdatePost?: (postId: string, status: ApprovalPost['status'], feedback?: string) => void | Promise<void>
   onDeletePost?: (postId: string) => void | Promise<void>
   language: Language
@@ -33,12 +34,46 @@ type CalendarItem = {
   feedback?: string
   approvalId?: string
   scheduledId?: string
+  metric?: PerformanceMetric | null
 }
 
-export function ContentCalendar({ posts, approvalPosts = [], onUpdatePost, onDeletePost, language }: ContentCalendarProps) {
+function normalizeCalendarCaption(value: string) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+}
+
+function findMetricForPost(post: ScheduledPost, metrics: PerformanceMetric[]) {
+  const postCaption = normalizeCalendarCaption(post.caption)
+  const postDate = String(post.scheduled_at || post.date || '').split('T')[0]
+
+  const exactMatch = metrics.find((metric) =>
+    metric.platform === post.platform &&
+    normalizeCalendarCaption(metric.caption) === postCaption
+  )
+
+  if (exactMatch) {
+    return exactMatch
+  }
+
+  const datedMetrics = metrics.filter((metric) =>
+    metric.platform === post.platform && metric.date === postDate
+  )
+
+  const partialMatch = datedMetrics.find((metric) => {
+    const metricCaption = normalizeCalendarCaption(metric.caption)
+    return postCaption.includes(metricCaption) || metricCaption.includes(postCaption)
+  })
+
+  return partialMatch || datedMetrics[0] || null
+}
+
+export function ContentCalendar({ posts, approvalPosts = [], metrics = [], onUpdatePost, onDeletePost, language }: ContentCalendarProps) {
   const [activeComment, setActiveComment] = useState<string | null>(null)
   const [commentText, setCommentText] = useState('')
   const t = translations[language].calendar
+  const performanceT = translations[language].performance
 
   const pendingApprovalItems: CalendarItem[] = approvalPosts
     .filter((post) => {
@@ -73,6 +108,7 @@ export function ContentCalendar({ posts, approvalPosts = [], onUpdatePost, onDel
       postedToFacebook: post.posted_to_facebook ?? false,
       postedToInstagram: post.posted_to_instagram ?? false,
       postError: post.post_error,
+      metric: findMetricForPost(post, metrics),
     }))
 
   const calendarItems = [...pendingApprovalItems, ...approvedItems].sort((a, b) => a.date.localeCompare(b.date))
@@ -181,6 +217,29 @@ export function ContentCalendar({ posts, approvalPosts = [], onUpdatePost, onDel
               <p className="text-sm text-muted-foreground line-clamp-3 whitespace-pre-line">
                 {item.caption}
               </p>
+
+              {item.status === 'approved' && item.metric && (
+                <div className="grid grid-cols-3 gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{performanceT.reach}</p>
+                    <p className="text-sm font-semibold text-foreground">{item.metric.reach.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{performanceT.likes}</p>
+                    <p className="text-sm font-semibold text-foreground">{item.metric.likes.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{performanceT.engagement}</p>
+                    <p className="text-sm font-semibold text-foreground">{item.metric.engagement_rate.toFixed(1)}%</p>
+                  </div>
+                </div>
+              )}
+
+              {item.status === 'approved' && !item.metric && (item.postedToFacebook || item.postedToInstagram) && (
+                <Badge variant="outline" className="border-sky-500/50 text-sky-700">
+                  {language === 'en' ? 'Metrics syncing' : 'Sincronizando métricas'}
+                </Badge>
+              )}
 
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <CalendarIcon size={16} weight="bold" />

@@ -452,6 +452,7 @@ function App() {
               <ContentCalendar
                 posts={scheduledPosts || []}
                 approvalPosts={approvalPosts || []}
+                metrics={performanceMetrics || []}
                 onUpdatePost={handleUpdatePost}
                 onDeletePost={handleDeleteScheduledPost}
                 language={currentLanguage}

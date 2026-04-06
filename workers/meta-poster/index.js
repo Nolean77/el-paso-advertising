@@ -18,6 +18,7 @@ const MESSAGE = {
   facebookDailyCap: 'Daily Facebook posting cap reached for this client page.',
   instagramDailyCap: 'Daily Instagram posting cap reached for this client page.',
   readInsightsReconnectRequired: 'Meta account is missing the insights permission. Reconnect this client account and try again.',
+  facebookMetricsPermissionRequired: 'Facebook metrics access is not fully granted. In Meta Developers, enable Advanced Access/App Review for pages_read_engagement and read_insights (or use an app admin/tester while the app is in Development mode), then reconnect this client account.',
 }
 
 export default {
@@ -534,6 +535,89 @@ async function getPostedFacebookPostsForMetrics(env, clientId) {
 }
 
 async function fetchFacebookPostMetrics(facebookPostId, pageAccessToken) {
+  const resolvedPostId = await resolveFacebookPostId(facebookPostId, pageAccessToken)
+  const insightData = await fetchFacebookPostInsights(resolvedPostId, pageAccessToken)
+
+  let metadata = {
+    caption: '',
+    createdTime: null,
+    likes: 0,
+  }
+
+  try {
+    metadata = await fetchFacebookPostMetadata(resolvedPostId, pageAccessToken)
+  } catch (error) {
+    if (!isFacebookPermissionError(error)) {
+      throw error
+    }
+
+    console.warn('Facebook post metadata is unavailable due to permissions; continuing with insights only for post', resolvedPostId)
+  }
+
+  const reach = insightData.reach
+  const engagedUsers = insightData.engagedUsers
+  const likes = metadata.likes
+  const engagementRate = reach > 0 ? Number(((engagedUsers / reach) * 100).toFixed(2)) : 0
+
+  return {
+    caption: metadata.caption,
+    createdTime: metadata.createdTime,
+    reach,
+    likes,
+    engagementRate,
+  }
+}
+
+async function resolveFacebookPostId(facebookPostId, pageAccessToken) {
+  const rawId = String(facebookPostId || '').trim()
+
+  if (!rawId || rawId.includes('_')) {
+    return rawId
+  }
+
+  try {
+    const url = new URL(`${META_GRAPH_BASE}/${rawId}`)
+    url.searchParams.set('fields', 'id,post_id,page_story_id')
+    url.searchParams.set('access_token', pageAccessToken)
+
+    const response = await fetch(url)
+    const json = await readMetaResponseBody(response)
+
+    if (!response.ok || json.error) {
+      throw buildFacebookMetricsError(response.status, json)
+    }
+
+    return json.page_story_id || json.post_id || rawId
+  } catch (error) {
+    if (isFacebookPermissionError(error)) {
+      throw new Error(MESSAGE.facebookMetricsPermissionRequired)
+    }
+
+    return rawId
+  }
+}
+
+async function fetchFacebookPostInsights(facebookPostId, pageAccessToken) {
+  const url = new URL(`${META_GRAPH_BASE}/${facebookPostId}/insights`)
+  url.searchParams.set('metric', 'post_impressions_unique,post_engaged_users')
+  url.searchParams.set('access_token', pageAccessToken)
+
+  const response = await fetch(url)
+  const json = await readMetaResponseBody(response)
+
+  if (!response.ok || json.error) {
+    throw buildFacebookMetricsError(response.status, json)
+  }
+
+  const insights = Array.isArray(json.data) ? json.data : []
+
+  return {
+    reach: extractMetricValue(insights, 'post_impressions_unique'),
+    engagedUsers: extractMetricValue(insights, 'post_engaged_users'),
+  }
+}
+
+async function fetchFacebookPostMetadata(facebookPostId, pageAccessToken) {
   const url = new URL(`${META_GRAPH_BASE}/${facebookPostId}`)
   url.searchParams.set(
     'fields',
@@ -542,7 +626,6 @@ async function fetchFacebookPostMetrics(facebookPostId, pageAccessToken) {
       'created_time',
       'likes.summary(total_count).limit(0)',
       'reactions.summary(total_count).limit(0)',
-      'insights.metric(post_impressions_unique,post_engaged_users)',
     ].join(',')
   )
   url.searchParams.set('access_token', pageAccessToken)
@@ -551,28 +634,33 @@ async function fetchFacebookPostMetrics(facebookPostId, pageAccessToken) {
   const json = await readMetaResponseBody(response)
 
   if (!response.ok || json.error) {
-    const rawMessage = json.error?.message || `Facebook metrics fetch failed (HTTP ${response.status}). ${json.rawText || ''}`.trim()
-
-    if (/read_insights|insights/i.test(rawMessage)) {
-      throw new Error(MESSAGE.readInsightsReconnectRequired)
-    }
-
-    throw new Error(rawMessage)
+    throw buildFacebookMetricsError(response.status, json)
   }
-
-  const insights = Array.isArray(json.insights?.data) ? json.insights.data : []
-  const reach = extractMetricValue(insights, 'post_impressions_unique')
-  const engagedUsers = extractMetricValue(insights, 'post_engaged_users')
-  const likes = Number(json.likes?.summary?.total_count ?? json.reactions?.summary?.total_count ?? 0) || 0
-  const engagementRate = reach > 0 ? Number(((engagedUsers / reach) * 100).toFixed(2)) : 0
 
   return {
     caption: typeof json.message === 'string' ? json.message.trim() : '',
     createdTime: typeof json.created_time === 'string' ? json.created_time : null,
-    reach,
-    likes,
-    engagementRate,
+    likes: Number(json.likes?.summary?.total_count ?? json.reactions?.summary?.total_count ?? 0) || 0,
   }
+}
+
+function buildFacebookMetricsError(status, json) {
+  const rawMessage = json?.error?.message || `Facebook metrics fetch failed (HTTP ${status}). ${json?.rawText || ''}`.trim()
+
+  if (/pages_read_engagement|page public content access/i.test(rawMessage)) {
+    return new Error(MESSAGE.facebookMetricsPermissionRequired)
+  }
+
+  if (/read_insights|insights/i.test(rawMessage)) {
+    return new Error(MESSAGE.readInsightsReconnectRequired)
+  }
+
+  return new Error(rawMessage)
+}
+
+function isFacebookPermissionError(error) {
+  const message = error instanceof Error ? error.message : String(error || '')
+  return /pages_read_engagement|page public content access|read_insights|insights/i.test(message)
 }
 
 async function upsertPerformanceMetric(env, metric) {

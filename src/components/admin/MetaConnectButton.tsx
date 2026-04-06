@@ -10,6 +10,7 @@ const SCOPES = [
   'pages_manage_posts',
   'pages_read_engagement',
   'pages_show_list',
+  'read_insights',
 ].join(',')
 
 export function MetaConnectButton({ clientId, className }: MetaConnectButtonProps) {

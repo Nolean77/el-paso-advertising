@@ -13,6 +13,12 @@ interface MetricsEntryProps {
   selectedClientName?: string
 }
 
+const DEFAULT_META_REDIRECT_URI = 'https://ep-meta-poster.workers.dev/oauth/meta/callback'
+const META_WORKER_BASE_URL = (
+  import.meta.env.VITE_META_WORKER_URL ||
+  (import.meta.env.VITE_META_REDIRECT_URI || DEFAULT_META_REDIRECT_URI).replace(/\/oauth\/meta\/callback$/, '')
+).replace(/\/$/, '')
+
 export function MetricsEntry({ selectedClientId, selectedClientName }: MetricsEntryProps) {
   const [platform, setPlatform] = useState('')
   const [caption, setCaption] = useState('')
@@ -21,6 +27,60 @@ export function MetricsEntry({ selectedClientId, selectedClientName }: MetricsEn
   const [likes, setLikes] = useState('')
   const [engagementRate, setEngagementRate] = useState('')
   const [saving, setSaving] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+
+  const handlePullFacebookMetrics = async () => {
+    if (!selectedClientId) {
+      toast.error('Select a client from the portal header first.')
+      return
+    }
+
+    if (!META_WORKER_BASE_URL) {
+      toast.error('Meta worker URL is not configured.')
+      return
+    }
+
+    setSyncing(true)
+
+    try {
+      const response = await fetch(`${META_WORKER_BASE_URL}/metrics/sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          clientId: selectedClientId,
+          platform: 'facebook',
+        }),
+      })
+
+      const result = await response.json().catch(() => ({}))
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error || 'Unable to pull Facebook metrics.')
+      }
+
+      if ((result.checkedCount ?? 0) === 0) {
+        toast('No posted Facebook content was found yet for this client.')
+        return
+      }
+
+      if ((result.syncedCount ?? 0) > 0) {
+        toast.success(`Facebook metrics synced for ${result.syncedCount} post${result.syncedCount === 1 ? '' : 's'}.`)
+        return
+      }
+
+      const firstError = Array.isArray(result.errors) && result.errors.length > 0
+        ? result.errors[0]?.message
+        : 'No Facebook posts could be synced right now.'
+
+      throw new Error(firstError || 'No Facebook posts could be synced right now.')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to pull Facebook metrics.')
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -61,16 +121,37 @@ export function MetricsEntry({ selectedClientId, selectedClientName }: MetricsEn
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h2 className="text-2xl font-bold">Enter Performance Metrics</h2>
+        <h2 className="text-2xl font-bold">Pull or Enter Performance Metrics</h2>
         <p className="text-sm text-muted-foreground">
           {selectedClientName
-            ? <>Saving metrics for <span className="font-medium text-foreground">{selectedClientName}</span>.</>
+            ? <>Managing metrics for <span className="font-medium text-foreground">{selectedClientName}</span>.</>
             : 'Select a client above to continue.'}
         </p>
       </div>
 
       <Card>
-        <CardHeader><CardTitle>New Metric Entry</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Facebook Sync</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Pull the latest reach, likes, and engagement data from the client&apos;s connected Facebook page.
+          </p>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handlePullFacebookMetrics}
+            disabled={syncing || !selectedClientId || !META_WORKER_BASE_URL}
+            className="w-full"
+          >
+            {syncing ? 'Pulling Facebook Metrics...' : 'Pull Facebook Metrics'}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            If this client connected before insights access was enabled, reconnect the Meta account once and run the sync again.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Manual Metric Entry</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">

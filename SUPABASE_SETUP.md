@@ -8,7 +8,8 @@ A bilingual client portal for digital marketing content approval, built with Rea
 - 📅 Content calendar view for scheduled posts
 - ✅ Content approval workflow with feedback
 - 📊 Performance metrics dashboard
-- 📝 Content request submission with file uploads
+- � Auto-sync Facebook post metrics from Meta Graph API
+- �📝 Content request submission with file uploads
 - 🌐 Bilingual support (English/Spanish)
 - 📁 Image compression and file size management
 - ☁️ Cloud storage for reference images
@@ -259,6 +260,8 @@ VITE_META_APP_ID=979397271325727
 VITE_META_REDIRECT_URI=https://ep-meta-poster.workers.dev/oauth/meta/callback
 ```
 
+> After deploying the metrics sync update, reconnect existing Meta-linked clients once so the app can request the `read_insights` permission needed for Facebook post metrics.
+
 Do not store Meta app secret, Supabase service key, or access tokens in frontend source.
 
 ### 4a. Cloudflare Worker Secrets (Meta Poster)
@@ -287,7 +290,8 @@ wrangler deploy
 
 The worker listens on:
 - `GET /oauth/meta/callback` for OAuth redirect handling
-- cron schedule every 5 minutes for auto-posting
+- `POST /metrics/sync` for manual Facebook metric pulls from the admin portal
+- cron schedule every 5 minutes for auto-posting and Facebook metrics syncing
 
 ### 5. Create Test User
 

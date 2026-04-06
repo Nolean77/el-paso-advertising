@@ -1,7 +1,14 @@
 const META_API_VERSION = 'v19.0'
 const META_GRAPH_BASE = `https://graph.facebook.com/${META_API_VERSION}`
 const META_DIALOG_REDIRECT_PATH = '/oauth/meta/callback'
+const METRICS_SYNC_PATH = '/metrics/sync'
 const BLOCKED_FACEBOOK_PAGE_IDS = new Set(['433627129826098'])
+const DEFAULT_ALLOWED_ORIGINS = new Set([
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:4173',
+  'http://127.0.0.1:4173',
+])
 const MESSAGE = {
   tokenReconnectRequired: 'Meta access token is expired. Reconnect this client account.',
   tokenRefreshFailed: 'Meta token refresh failed. Reconnect this client account.',
@@ -10,25 +17,35 @@ const MESSAGE = {
   instagramMediaRequired: 'Instagram requires an image or video URL.',
   facebookDailyCap: 'Daily Facebook posting cap reached for this client page.',
   instagramDailyCap: 'Daily Instagram posting cap reached for this client page.',
+  readInsightsReconnectRequired: 'Meta account is missing the insights permission. Reconnect this client account and try again.',
 }
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url)
+    const corsHeaders = buildCorsHeaders(request, env)
+
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: corsHeaders })
+    }
 
     if (request.method === 'GET' && url.pathname === META_DIALOG_REDIRECT_PATH) {
       return handleOAuthCallback(request, env)
     }
 
     if (request.method === 'GET' && url.pathname === '/health') {
-      return Response.json({ ok: true })
+      return Response.json({ ok: true }, { headers: corsHeaders })
     }
 
-    return new Response('Not found', { status: 404 })
+    if (request.method === 'POST' && url.pathname === METRICS_SYNC_PATH) {
+      return handleMetricsSyncRequest(request, env, corsHeaders)
+    }
+
+    return new Response('Not found', { status: 404, headers: corsHeaders })
   },
 
   async scheduled(_event, env, ctx) {
-    ctx.waitUntil(runScheduledPoster(env))
+    ctx.waitUntil(runScheduledWork(env))
   },
 }
 
@@ -66,6 +83,11 @@ async function handleOAuthCallback(request, env) {
     const message = error instanceof Error ? error.message : 'unknown_error'
     return redirectToPortal(env, { meta_error: message })
   }
+}
+
+async function runScheduledWork(env) {
+  await runScheduledPoster(env)
+  await syncFacebookMetrics(env)
 }
 
 async function runScheduledPoster(env) {
@@ -301,7 +323,7 @@ async function publishToFacebook(env, post, connection) {
 
     await updateScheduledPost(env, post.id, {
       posted_to_facebook: true,
-      facebook_post_id: result.id || result.post_id || null,
+      facebook_post_id: result.post_id || result.id || null,
       post_error: null,
       posted_at: new Date().toISOString(),
     })
@@ -410,6 +432,233 @@ async function publishToInstagram(env, post, connection) {
       error_message: message,
     })
   }
+}
+
+async function handleMetricsSyncRequest(request, env, corsHeaders) {
+  try {
+    const body = await request.json().catch(() => ({}))
+    const clientId = typeof body?.clientId === 'string' && body.clientId.trim()
+      ? body.clientId.trim()
+      : undefined
+    const platform = typeof body?.platform === 'string' ? body.platform : 'facebook'
+
+    if (platform !== 'facebook') {
+      return jsonResponse({ ok: false, error: 'Only Facebook metrics sync is currently supported.' }, 400, corsHeaders)
+    }
+
+    const result = await syncFacebookMetrics(env, { clientId })
+    return jsonResponse({ ok: true, platform: 'facebook', ...result }, 200, corsHeaders)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Metrics sync failed.'
+    console.error('Metrics sync request failed:', message)
+    return jsonResponse({ ok: false, error: message }, 500, corsHeaders)
+  }
+}
+
+async function syncFacebookMetrics(env, options = {}) {
+  const posts = await getPostedFacebookPostsForMetrics(env, options.clientId)
+
+  if (!Array.isArray(posts) || posts.length === 0) {
+    return {
+      checkedCount: 0,
+      syncedCount: 0,
+      skippedCount: 0,
+      errors: [],
+    }
+  }
+
+  const connectionCache = new Map()
+  const errors = []
+  let syncedCount = 0
+  let skippedCount = 0
+
+  for (const post of posts) {
+    try {
+      let connection = connectionCache.get(post.user_id)
+      if (connection === undefined) {
+        connection = await getActiveMetaConnection(env, post.user_id)
+        connectionCache.set(post.user_id, connection || null)
+      }
+
+      if (!connection?.page_access_token) {
+        skippedCount += 1
+        errors.push({ postId: post.id, message: MESSAGE.noActiveConnection })
+        continue
+      }
+
+      const metric = await fetchFacebookPostMetrics(post.facebook_post_id, connection.page_access_token)
+      const metricDate = (metric.createdTime || post.posted_at || post.date || new Date().toISOString()).split('T')[0]
+
+      await upsertPerformanceMetric(env, {
+        user_id: post.user_id,
+        platform: 'facebook',
+        caption: metric.caption || post.caption || 'Facebook post',
+        date: metricDate,
+        reach: metric.reach,
+        likes: metric.likes,
+        engagement_rate: metric.engagementRate,
+      })
+
+      syncedCount += 1
+    } catch (error) {
+      skippedCount += 1
+      const message = error instanceof Error ? error.message : 'Unable to sync this Facebook post.'
+      console.error('Failed to sync Facebook metrics for post', post.id, ':', message)
+      errors.push({ postId: post.id, message })
+    }
+  }
+
+  return {
+    checkedCount: posts.length,
+    syncedCount,
+    skippedCount,
+    errors: errors.slice(0, 5),
+  }
+}
+
+async function getPostedFacebookPostsForMetrics(env, clientId) {
+  const query = {
+    select: 'id,user_id,caption,date,posted_at,facebook_post_id',
+    platform: 'eq.facebook',
+    posted_to_facebook: 'eq.true',
+    facebook_post_id: 'not.is.null',
+    order: 'posted_at.desc.nullslast,date.desc',
+    limit: clientId ? '100' : '250',
+  }
+
+  if (clientId) {
+    query.user_id = `eq.${clientId}`
+  }
+
+  return querySupabase(env, '/rest/v1/scheduled_posts', query)
+}
+
+async function fetchFacebookPostMetrics(facebookPostId, pageAccessToken) {
+  const url = new URL(`${META_GRAPH_BASE}/${facebookPostId}`)
+  url.searchParams.set(
+    'fields',
+    [
+      'message',
+      'created_time',
+      'likes.summary(total_count).limit(0)',
+      'reactions.summary(total_count).limit(0)',
+      'insights.metric(post_impressions_unique,post_engaged_users)',
+    ].join(',')
+  )
+  url.searchParams.set('access_token', pageAccessToken)
+
+  const response = await fetch(url)
+  const json = await readMetaResponseBody(response)
+
+  if (!response.ok || json.error) {
+    const rawMessage = json.error?.message || `Facebook metrics fetch failed (HTTP ${response.status}). ${json.rawText || ''}`.trim()
+
+    if (/read_insights|insights/i.test(rawMessage)) {
+      throw new Error(MESSAGE.readInsightsReconnectRequired)
+    }
+
+    throw new Error(rawMessage)
+  }
+
+  const insights = Array.isArray(json.insights?.data) ? json.insights.data : []
+  const reach = extractMetricValue(insights, 'post_impressions_unique')
+  const engagedUsers = extractMetricValue(insights, 'post_engaged_users')
+  const likes = Number(json.likes?.summary?.total_count ?? json.reactions?.summary?.total_count ?? 0) || 0
+  const engagementRate = reach > 0 ? Number(((engagedUsers / reach) * 100).toFixed(2)) : 0
+
+  return {
+    caption: typeof json.message === 'string' ? json.message.trim() : '',
+    createdTime: typeof json.created_time === 'string' ? json.created_time : null,
+    reach,
+    likes,
+    engagementRate,
+  }
+}
+
+async function upsertPerformanceMetric(env, metric) {
+  const safeCaption = normalizeMetricCaption(metric.caption) || 'Facebook post'
+  const safeDate = String(metric.date || new Date().toISOString().split('T')[0])
+  const existingRows = await querySupabase(env, '/rest/v1/performance_metrics', {
+    select: 'id,caption',
+    user_id: `eq.${metric.user_id}`,
+    platform: `eq.${metric.platform}`,
+    date: `eq.${safeDate}`,
+    limit: '50',
+  })
+
+  const existingMatch = Array.isArray(existingRows)
+    ? existingRows.find((row) => normalizeMetricCaption(row.caption) === safeCaption)
+    : null
+
+  const payload = {
+    ...metric,
+    caption: safeCaption,
+    date: safeDate,
+  }
+
+  if (existingMatch?.id) {
+    return updateSupabase(env, `/rest/v1/performance_metrics?id=eq.${existingMatch.id}`, payload)
+  }
+
+  return insertSupabase(env, '/rest/v1/performance_metrics', payload)
+}
+
+function normalizeMetricCaption(caption) {
+  return String(caption || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function extractMetricValue(metrics, name) {
+  const metric = Array.isArray(metrics)
+    ? metrics.find((item) => item?.name === name)
+    : null
+  const latestValue = Array.isArray(metric?.values) && metric.values.length > 0
+    ? metric.values[metric.values.length - 1]?.value
+    : 0
+
+  if (typeof latestValue === 'number') {
+    return latestValue
+  }
+
+  return Number(latestValue) || 0
+}
+
+function jsonResponse(payload, status = 200, headers = {}) {
+  return Response.json(payload, {
+    status,
+    headers,
+  })
+}
+
+function buildCorsHeaders(request, env) {
+  const origin = request.headers.get('Origin')
+  const allowedOrigins = getAllowedOrigins(env)
+  const allowOrigin = origin && allowedOrigins.has(origin)
+    ? origin
+    : Array.from(allowedOrigins)[0] || '*'
+
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
+  }
+}
+
+function getAllowedOrigins(env) {
+  const origins = new Set(DEFAULT_ALLOWED_ORIGINS)
+
+  if (env.PORTAL_URL) {
+    try {
+      origins.add(new URL(env.PORTAL_URL).origin)
+    } catch {
+      // ignore invalid portal URL values
+    }
+  }
+
+  return origins
 }
 
 async function checkDailyPostLimit(env, clientId, platform) {

@@ -27,7 +27,9 @@ export function MetaConnectButton({ clientId, className }: MetaConnectButtonProp
       `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
       `&scope=${encodeURIComponent(SCOPES)}` +
       `&state=${encodeURIComponent(clientId)}` +
-      `&response_type=code`
+      `&response_type=code` +
+      `&auth_type=rerequest` +
+      `&return_scopes=true`
 
     window.location.href = authUrl
   }

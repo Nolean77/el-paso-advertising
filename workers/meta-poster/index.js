@@ -3,6 +3,8 @@ const META_GRAPH_BASE = `https://graph.facebook.com/${META_API_VERSION}`
 const META_DIALOG_REDIRECT_PATH = '/oauth/meta/callback'
 const METRICS_SYNC_PATH = '/metrics/sync'
 const BLOCKED_FACEBOOK_PAGE_IDS = new Set(['433627129826098'])
+const REQUIRED_META_SCOPES = ['pages_manage_posts', 'pages_read_engagement', 'pages_show_list', 'read_insights']
+const REQUIRED_METRICS_SCOPES = ['pages_read_engagement', 'read_insights']
 const DEFAULT_ALLOWED_ORIGINS = new Set([
   'http://localhost:5173',
   'http://127.0.0.1:5173',
@@ -71,6 +73,13 @@ async function handleOAuthCallback(request, env) {
         ? longLivedUserToken.expires_in
         : 5184000 // 60 days
       const tokenExpiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString()
+
+    const grantedScopes = await getGrantedPermissions(longLivedUserToken.access_token)
+    const missingScopes = REQUIRED_META_SCOPES.filter((scope) => !grantedScopes.includes(scope))
+
+    if (missingScopes.length > 0) {
+      throw new Error(`Meta granted only [${grantedScopes.join(', ') || 'none'}]. Missing required permissions: ${missingScopes.join(', ')}. Please reconnect and approve all requested permissions.`)
+    }
 
     const pages = await getUserPages(longLivedUserToken.access_token)
     if (!Array.isArray(pages) || pages.length === 0) {
@@ -487,6 +496,7 @@ async function syncFacebookMetrics(env, options = {}) {
         continue
       }
 
+      await assertFacebookMetricsPermissions(env, connection.page_access_token)
       const metric = await fetchFacebookPostMetrics(post.facebook_post_id, connection.page_access_token)
       const metricDate = (metric.createdTime || post.posted_at || post.date || new Date().toISOString()).split('T')[0]
 
@@ -689,6 +699,49 @@ async function upsertPerformanceMetric(env, metric) {
   }
 
   return insertSupabase(env, '/rest/v1/performance_metrics', payload)
+}
+
+async function assertFacebookMetricsPermissions(env, pageAccessToken) {
+  const tokenInfo = await debugMetaToken(env, pageAccessToken)
+  const grantedScopes = Array.isArray(tokenInfo?.scopes) ? tokenInfo.scopes : []
+  const missingScopes = REQUIRED_METRICS_SCOPES.filter((scope) => !grantedScopes.includes(scope))
+
+  if (missingScopes.length > 0) {
+    throw new Error(
+      `${MESSAGE.facebookMetricsPermissionRequired} Missing on this token: ${missingScopes.join(', ')}. Granted: ${grantedScopes.join(', ') || 'none'}.`
+    )
+  }
+}
+
+async function debugMetaToken(env, inputToken) {
+  const url = new URL(`${META_GRAPH_BASE}/debug_token`)
+  url.searchParams.set('input_token', inputToken)
+  url.searchParams.set('access_token', `${env.META_APP_ID}|${env.META_APP_SECRET}`)
+
+  const response = await fetch(url)
+  const json = await readMetaResponseBody(response)
+
+  if (!response.ok || json.error) {
+    throw new Error(json.error?.message || 'Unable to inspect Meta token permissions.')
+  }
+
+  return json.data || {}
+}
+
+async function getGrantedPermissions(accessToken) {
+  const url = new URL(`${META_GRAPH_BASE}/me/permissions`)
+  url.searchParams.set('access_token', accessToken)
+
+  const response = await fetch(url)
+  const json = await readMetaResponseBody(response)
+
+  if (!response.ok || json.error) {
+    throw new Error(json.error?.message || 'Unable to verify Meta permissions.')
+  }
+
+  return Array.isArray(json.data)
+    ? json.data.filter((entry) => entry?.status === 'granted').map((entry) => entry.permission)
+    : []
 }
 
 function normalizeMetricCaption(caption) {

@@ -588,7 +588,7 @@ async function fetchFacebookPostMetrics(facebookPostId, accessTokens) {
 
       const reach = insightData.reach
       const engagedUsers = insightData.engagedUsers
-      const likes = metadata.likes
+      const likes = Math.max(metadata.likes, insightData.likeCount)
       const engagementRate = reach > 0 ? Number(((engagedUsers / reach) * 100).toFixed(2)) : 0
 
       return {
@@ -655,10 +655,39 @@ async function fetchFacebookPostInsights(facebookPostId, accessToken) {
     'post_reactions_by_type_total',
   ])
 
+  const likeCount = await fetchFacebookLikeMetricValue(facebookPostId, accessToken)
+
   return {
     reach,
     engagedUsers,
+    likeCount,
   }
+}
+
+async function fetchFacebookLikeMetricValue(facebookPostId, accessToken) {
+  try {
+    const url = new URL(`${META_GRAPH_BASE}/${facebookPostId}`)
+    url.searchParams.set('fields', 'reactions.type(LIKE).limit(0).summary(total_count)')
+    url.searchParams.set('access_token', accessToken)
+
+    const response = await fetch(url)
+    const json = await readMetaResponseBody(response)
+
+    if (!response.ok || json.error) {
+      throw buildFacebookMetricsError(response.status, json)
+    }
+
+    return Number(json.reactions?.summary?.total_count ?? 0) || 0
+  } catch (error) {
+    if (!isRecoverableFacebookMetricError(error)) {
+      throw error
+    }
+  }
+
+  return fetchFacebookInsightMetricNamedValue(facebookPostId, accessToken, [
+    { metric: 'post_reactions_by_type_total', keys: ['like', 'LIKE'] },
+    { metric: 'post_activity_by_action_type', keys: ['like', 'likes'] },
+  ])
 }
 
 async function fetchFacebookInsightMetricValue(facebookPostId, accessToken, candidateMetrics) {
@@ -694,6 +723,39 @@ async function fetchFacebookInsightMetricValue(facebookPostId, accessToken, cand
   return 0
 }
 
+async function fetchFacebookInsightMetricNamedValue(facebookPostId, accessToken, candidates) {
+  const errors = []
+
+  for (const candidate of candidates) {
+    const url = new URL(`${META_GRAPH_BASE}/${facebookPostId}/insights`)
+    url.searchParams.set('metric', candidate.metric)
+    url.searchParams.set('access_token', accessToken)
+
+    const response = await fetch(url)
+    const json = await readMetaResponseBody(response)
+
+    if (!response.ok || json.error) {
+      const error = buildFacebookMetricsError(response.status, json)
+      const message = error instanceof Error ? error.message : String(error)
+
+      if (isRecoverableFacebookMetricError(error) || /valid insights metric|invalid query/i.test(message)) {
+        errors.push(message)
+        continue
+      }
+
+      throw error
+    }
+
+    return extractNamedMetricValue(Array.isArray(json.data) ? json.data : [], candidate.metric, candidate.keys)
+  }
+
+  if (errors.some((message) => /pages_read_engagement|page public content access|read_insights permission/i.test(message))) {
+    throw new Error(errors[0])
+  }
+
+  return 0
+}
+
 async function fetchFacebookPostMetadata(facebookPostId, pageAccessToken) {
   const url = new URL(`${META_GRAPH_BASE}/${facebookPostId}`)
   url.searchParams.set(
@@ -701,8 +763,7 @@ async function fetchFacebookPostMetadata(facebookPostId, pageAccessToken) {
     [
       'message',
       'created_time',
-      'likes.summary(total_count).limit(0)',
-      'reactions.summary(total_count).limit(0)',
+      'reactions.type(LIKE).limit(0).summary(total_count)',
     ].join(',')
   )
   url.searchParams.set('access_token', pageAccessToken)
@@ -860,6 +921,25 @@ function extractMetricValue(metrics, name) {
   }
 
   return Number(latestValue) || 0
+}
+
+function extractNamedMetricValue(metrics, metricName, keys) {
+  const metric = Array.isArray(metrics)
+    ? metrics.find((item) => item?.name === metricName)
+    : null
+  const latestValue = Array.isArray(metric?.values) && metric.values.length > 0
+    ? metric.values[metric.values.length - 1]?.value
+    : 0
+
+  if (latestValue && typeof latestValue === 'object') {
+    for (const key of keys) {
+      if (key in latestValue) {
+        return Number(latestValue[key]) || 0
+      }
+    }
+  }
+
+  return typeof latestValue === 'number' ? latestValue : Number(latestValue) || 0
 }
 
 function extractFirstMetricValue(metrics, names) {

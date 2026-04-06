@@ -506,17 +506,15 @@ async function syncFacebookMetrics(env, options = {}) {
         continue
       }
 
-      const { pageAccessToken, userAccessToken } = parseStoredMetaTokens(connection.page_access_token)
-      const metricsAccessToken = userAccessToken || pageAccessToken
+      const metricsAccessTokens = getFacebookMetricsAccessTokens(connection.page_access_token)
 
-      if (!metricsAccessToken) {
+      if (metricsAccessTokens.length === 0) {
         skippedCount += 1
         errors.push({ postId: post.id, message: MESSAGE.noActiveConnection })
         continue
       }
 
-      await assertFacebookMetricsPermissions(env, metricsAccessToken)
-      const metric = await fetchFacebookPostMetrics(post.facebook_post_id, metricsAccessToken)
+      const metric = await fetchFacebookPostMetrics(post.facebook_post_id, metricsAccessTokens)
       const metricDate = (metric.createdTime || post.posted_at || post.date || new Date().toISOString()).split('T')[0]
 
       await upsertPerformanceMetric(env, {
@@ -563,38 +561,54 @@ async function getPostedFacebookPostsForMetrics(env, clientId) {
   return querySupabase(env, '/rest/v1/scheduled_posts', query)
 }
 
-async function fetchFacebookPostMetrics(facebookPostId, pageAccessToken) {
-  const resolvedPostId = await resolveFacebookPostId(facebookPostId, pageAccessToken)
-  const insightData = await fetchFacebookPostInsights(resolvedPostId, pageAccessToken)
+async function fetchFacebookPostMetrics(facebookPostId, accessTokens) {
+  const candidateTokens = Array.isArray(accessTokens) ? accessTokens.filter(Boolean) : [accessTokens].filter(Boolean)
+  const attemptMessages = []
 
-  let metadata = {
-    caption: '',
-    createdTime: null,
-    likes: 0,
-  }
+  for (const accessToken of candidateTokens) {
+    try {
+      const resolvedPostId = await resolveFacebookPostId(facebookPostId, accessToken)
+      const insightData = await fetchFacebookPostInsights(resolvedPostId, accessToken)
 
-  try {
-    metadata = await fetchFacebookPostMetadata(resolvedPostId, pageAccessToken)
-  } catch (error) {
-    if (!isFacebookPermissionError(error)) {
-      throw error
+      let metadata = {
+        caption: '',
+        createdTime: null,
+        likes: 0,
+      }
+
+      try {
+        metadata = await fetchFacebookPostMetadata(resolvedPostId, accessToken)
+      } catch (error) {
+        if (!isRecoverableFacebookMetricError(error)) {
+          throw error
+        }
+
+        console.warn('Facebook post metadata is unavailable for token attempt; continuing with insights only for post', resolvedPostId)
+      }
+
+      const reach = insightData.reach
+      const engagedUsers = insightData.engagedUsers
+      const likes = metadata.likes
+      const engagementRate = reach > 0 ? Number(((engagedUsers / reach) * 100).toFixed(2)) : 0
+
+      return {
+        caption: metadata.caption,
+        createdTime: metadata.createdTime,
+        reach,
+        likes,
+        engagementRate,
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to read Facebook metrics.'
+      attemptMessages.push(message)
+
+      if (!isRecoverableFacebookMetricError(error)) {
+        throw new Error(message)
+      }
     }
-
-    console.warn('Facebook post metadata is unavailable due to permissions; continuing with insights only for post', resolvedPostId)
   }
 
-  const reach = insightData.reach
-  const engagedUsers = insightData.engagedUsers
-  const likes = metadata.likes
-  const engagementRate = reach > 0 ? Number(((engagedUsers / reach) * 100).toFixed(2)) : 0
-
-  return {
-    caption: metadata.caption,
-    createdTime: metadata.createdTime,
-    reach,
-    likes,
-    engagementRate,
-  }
+  throw new Error(attemptMessages[0] || 'Unable to read Facebook metrics.')
 }
 
 async function resolveFacebookPostId(facebookPostId, pageAccessToken) {
@@ -692,6 +706,15 @@ function isFacebookPermissionError(error) {
   return /pages_read_engagement|page public content access|read_insights permission/i.test(message)
 }
 
+function isInvalidFacebookAccessTokenError(error) {
+  const message = error instanceof Error ? error.message : String(error || '')
+  return /invalid oauth 2\.0 access token|error validating access token|session has expired/i.test(message)
+}
+
+function isRecoverableFacebookMetricError(error) {
+  return isFacebookPermissionError(error) || isInvalidFacebookAccessTokenError(error)
+}
+
 async function upsertPerformanceMetric(env, metric) {
   const safeCaption = normalizeMetricCaption(metric.caption) || 'Facebook post'
   const safeDate = String(metric.date || new Date().toISOString().split('T')[0])
@@ -720,36 +743,9 @@ async function upsertPerformanceMetric(env, metric) {
   return insertSupabase(env, '/rest/v1/performance_metrics', payload)
 }
 
-async function assertFacebookMetricsPermissions(env, accessToken) {
-  const tokenInfo = await debugMetaToken(env, accessToken)
-  const grantedScopes = Array.isArray(tokenInfo?.scopes) ? tokenInfo.scopes : []
-
-  if (grantedScopes.length === 0) {
-    return
-  }
-
-  const missingScopes = REQUIRED_METRICS_SCOPES.filter((scope) => !grantedScopes.includes(scope))
-
-  if (missingScopes.length > 0) {
-    throw new Error(
-      `${MESSAGE.facebookMetricsPermissionRequired} Missing on this token: ${missingScopes.join(', ')}. Granted: ${grantedScopes.join(', ') || 'none'}.`
-    )
-  }
-}
-
-async function debugMetaToken(env, inputToken) {
-  const url = new URL(`${META_GRAPH_BASE}/debug_token`)
-  url.searchParams.set('input_token', inputToken)
-  url.searchParams.set('access_token', `${env.META_APP_ID}|${env.META_APP_SECRET}`)
-
-  const response = await fetch(url)
-  const json = await readMetaResponseBody(response)
-
-  if (!response.ok || json.error) {
-    throw new Error(json.error?.message || 'Unable to inspect Meta token permissions.')
-  }
-
-  return json.data || {}
+function getFacebookMetricsAccessTokens(tokenValue) {
+  const { pageAccessToken, userAccessToken } = parseStoredMetaTokens(tokenValue)
+  return [...new Set([pageAccessToken, userAccessToken].filter(Boolean))]
 }
 
 async function getGrantedPermissions(accessToken) {

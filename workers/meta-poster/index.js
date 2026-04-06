@@ -641,32 +641,57 @@ async function resolveFacebookPostId(facebookPostId, pageAccessToken) {
 }
 
 async function fetchFacebookPostInsights(facebookPostId, accessToken) {
-  const url = new URL(`${META_GRAPH_BASE}/${facebookPostId}/insights`)
-  url.searchParams.set('access_token', accessToken)
+  const reach = await fetchFacebookInsightMetricValue(facebookPostId, accessToken, [
+    'post_impressions_unique',
+    'post_impressions',
+    'post_impressions_paid_unique',
+    'post_impressions_organic_unique',
+  ])
 
-  const response = await fetch(url)
-  const json = await readMetaResponseBody(response)
-
-  if (!response.ok || json.error) {
-    throw buildFacebookMetricsError(response.status, json)
-  }
-
-  const insights = Array.isArray(json.data) ? json.data : []
+  const engagedUsers = await fetchFacebookInsightMetricValue(facebookPostId, accessToken, [
+    'post_engaged_users',
+    'post_clicks',
+    'post_activity_by_action_type',
+    'post_reactions_by_type_total',
+  ])
 
   return {
-    reach: extractFirstMetricValue(insights, [
-      'post_impressions_unique',
-      'post_impressions',
-      'post_impressions_paid_unique',
-      'post_impressions_organic_unique',
-    ]),
-    engagedUsers: extractFirstMetricValue(insights, [
-      'post_engaged_users',
-      'post_clicks',
-      'post_activity_by_action_type',
-      'post_reactions_by_type_total',
-    ]),
+    reach,
+    engagedUsers,
   }
+}
+
+async function fetchFacebookInsightMetricValue(facebookPostId, accessToken, candidateMetrics) {
+  const errors = []
+
+  for (const metricName of candidateMetrics) {
+    const url = new URL(`${META_GRAPH_BASE}/${facebookPostId}/insights`)
+    url.searchParams.set('metric', metricName)
+    url.searchParams.set('access_token', accessToken)
+
+    const response = await fetch(url)
+    const json = await readMetaResponseBody(response)
+
+    if (!response.ok || json.error) {
+      const error = buildFacebookMetricsError(response.status, json)
+      const message = error instanceof Error ? error.message : String(error)
+
+      if (isRecoverableFacebookMetricError(error) || /valid insights metric|invalid query/i.test(message)) {
+        errors.push(message)
+        continue
+      }
+
+      throw error
+    }
+
+    return extractFirstMetricValue(Array.isArray(json.data) ? json.data : [], [metricName])
+  }
+
+  if (errors.some((message) => /pages_read_engagement|page public content access|read_insights permission/i.test(message))) {
+    throw new Error(errors[0])
+  }
+
+  return 0
 }
 
 async function fetchFacebookPostMetadata(facebookPostId, pageAccessToken) {

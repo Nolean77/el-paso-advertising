@@ -16,7 +16,7 @@ import { Approvals } from '@/components/Approvals'
 import { Performance } from '@/components/Performance'
 import { Requests } from '@/components/Requests'
 import { AdminPortal } from '@/components/admin/AdminPortal'
-import { buildApprovalImagePlaceholder, encodeApprovalCaption, findRelevantMetricForScheduledPost, isScheduledPostPublished, parseApprovalCaption, resolveUserRole } from '@/lib/utils'
+import { buildApprovalImagePlaceholder, encodeApprovalCaption, findRelevantMetricForScheduledPost, isScheduledPostPublished, normalizePerformanceMetrics, parseApprovalCaption, resolveUserRole } from '@/lib/utils'
 import { syncFacebookMetricsForClient } from '@/lib/metaMetrics'
 import type { User, ScheduledPost, ApprovalPost, PerformanceMetric, ContentRequest, RequestSubmission } from '@/lib/types'
 
@@ -160,7 +160,7 @@ function App() {
       }
 
       if (metricsRes.status === 'fulfilled' && !metricsRes.value.error) {
-        setPerformanceMetrics((metricsRes.value.data as PerformanceMetric[]) ?? [])
+        setPerformanceMetrics(normalizePerformanceMetrics((metricsRes.value.data as PerformanceMetric[]) ?? []))
       } else {
         failedSections.push('metrics')
       }
@@ -199,7 +199,7 @@ function App() {
             return
           }
 
-          setPerformanceMetrics((data as PerformanceMetric[]) ?? [])
+          setPerformanceMetrics(normalizePerformanceMetrics((data as PerformanceMetric[]) ?? []))
         }
       )
       .subscribe()
@@ -242,7 +242,7 @@ function App() {
           .order('date', { ascending: false })
 
         if (!isCancelled && !error) {
-          setPerformanceMetrics((data as PerformanceMetric[]) ?? [])
+          setPerformanceMetrics(normalizePerformanceMetrics((data as PerformanceMetric[]) ?? []))
         }
       } catch {
         // Keep background metric sync failures silent in the client view.

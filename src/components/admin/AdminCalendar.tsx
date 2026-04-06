@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { ContentCalendar } from '@/components/ContentCalendar'
 import { supabase } from '@/lib/supabase'
-import { buildApprovalImagePlaceholder, findRelevantMetricForScheduledPost, isScheduledPostPublished, parseApprovalCaption } from '@/lib/utils'
+import { buildApprovalImagePlaceholder, findRelevantMetricForScheduledPost, isScheduledPostPublished, normalizePerformanceMetrics, parseApprovalCaption } from '@/lib/utils'
 import { META_WORKER_BASE_URL, fetchPerformanceMetricsForClient, syncFacebookMetricsForClient } from '@/lib/metaMetrics'
 import type { ApprovalPost, ScheduledPost, PerformanceMetric } from '@/lib/types'
 
@@ -45,7 +45,7 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
 
       setScheduledPosts((scheduledRes.data as ScheduledPost[]) ?? [])
       setApprovalPosts((approvalsRes.data as ApprovalPost[]) ?? [])
-      setPerformanceMetrics(nextMetrics)
+      setPerformanceMetrics(normalizePerformanceMetrics(nextMetrics))
       setLoading(false)
     }
 
@@ -90,13 +90,13 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
         const directMetrics = !error ? ((data as PerformanceMetric[]) ?? []) : []
 
         if (directMetrics.length > 0 || !META_WORKER_BASE_URL) {
-          setPerformanceMetrics(directMetrics)
+          setPerformanceMetrics(normalizePerformanceMetrics(directMetrics))
           return
         }
 
         const fallbackMetrics = await fetchPerformanceMetricsForClient(selectedClientId)
         if (!isCancelled) {
-          setPerformanceMetrics(fallbackMetrics)
+          setPerformanceMetrics(normalizePerformanceMetrics(fallbackMetrics))
         }
       } catch {
         // Keep auto-sync quiet in the admin calendar.
@@ -142,7 +142,7 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
             }
           }
 
-          setPerformanceMetrics(nextMetrics)
+          setPerformanceMetrics(normalizePerformanceMetrics(nextMetrics))
         }
       )
       .subscribe()

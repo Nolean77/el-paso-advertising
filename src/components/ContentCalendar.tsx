@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { PlatformIcon } from '@/components/PlatformIcon'
 import { translations, type Language } from '@/lib/translations'
 import type { ScheduledPost, ApprovalPost, PerformanceMetric } from '@/lib/types'
-import { findRelevantMetricForScheduledPost, parseApprovalCaption } from '@/lib/utils'
+import { findRelevantMetricForScheduledPost, parseApprovalCaption, toMetricNumber } from '@/lib/utils'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { toast } from 'sonner'
@@ -241,15 +241,15 @@ export function ContentCalendar({ posts, approvalPosts = [], metrics = [], onUpd
                 <div className="grid grid-cols-3 gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
                   <div>
                     <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{performanceT.reach}</p>
-                    <p className="text-sm font-semibold text-foreground">{item.metric.reach.toLocaleString()}</p>
+                    <p className="text-sm font-semibold text-foreground">{toMetricNumber(item.metric.reach).toLocaleString()}</p>
                   </div>
                   <div>
                     <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{performanceT.likes}</p>
-                    <p className="text-sm font-semibold text-foreground">{item.metric.likes.toLocaleString()}</p>
+                    <p className="text-sm font-semibold text-foreground">{toMetricNumber(item.metric.likes).toLocaleString()}</p>
                   </div>
                   <div>
                     <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{performanceT.engagement}</p>
-                    <p className="text-sm font-semibold text-foreground">{item.metric.engagement_rate.toFixed(1)}%</p>
+                    <p className="text-sm font-semibold text-foreground">{toMetricNumber(item.metric.engagement_rate).toFixed(1)}%</p>
                   </div>
                 </div>
               )}

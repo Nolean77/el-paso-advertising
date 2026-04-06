@@ -4,6 +4,7 @@ import {
   buildApprovalImagePlaceholder,
   encodeApprovalCaption,
   findRelevantMetricForScheduledPost,
+  normalizePerformanceMetrics,
   parseApprovalCaption,
   resolveUserRole,
 } from './utils'
@@ -147,6 +148,23 @@ describe('approval caption helpers', () => {
     }
 
     expect(findRelevantMetricForScheduledPost(post, [pulledFacebookMetric])?.id).toBe('metric-facebook-cross-post')
+  })
+
+  it('normalizes engagement values returned as strings', () => {
+    const [metric] = normalizePerformanceMetrics([{
+      id: 'metric-string-values',
+      user_id: 'user-1',
+      caption: 'Spring sale starts Friday',
+      date: '2026-04-06',
+      platform: 'facebook',
+      reach: '1200' as unknown as number,
+      likes: '85' as unknown as number,
+      engagement_rate: '7.25' as unknown as number,
+    }])
+
+    expect(metric.reach).toBe(1200)
+    expect(metric.likes).toBe(85)
+    expect(metric.engagement_rate).toBe(7.25)
   })
 
   it('builds a safe SVG placeholder', () => {

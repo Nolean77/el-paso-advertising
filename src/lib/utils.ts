@@ -67,12 +67,35 @@ export function normalizeCalendarCaption(value: string) {
     .toLowerCase()
 }
 
+export function toMetricNumber(value: unknown) {
+  const parsed = typeof value === 'number'
+    ? value
+    : Number.parseFloat(String(value ?? '0'))
+
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+export function normalizePerformanceMetrics(metrics: PerformanceMetric[]) {
+  if (!Array.isArray(metrics)) {
+    return []
+  }
+
+  return metrics.map((metric) => ({
+    ...metric,
+    reach: toMetricNumber(metric?.reach),
+    likes: toMetricNumber(metric?.likes),
+    engagement_rate: toMetricNumber(metric?.engagement_rate),
+  }))
+}
+
 export function isScheduledPostPublished(post: Pick<ScheduledPost, 'posted_at' | 'posted_to_facebook' | 'posted_to_instagram'>) {
   return Boolean(post.posted_at || post.posted_to_facebook || post.posted_to_instagram)
 }
 
 export function findRelevantMetricForScheduledPost(post: ScheduledPost, metrics: PerformanceMetric[]) {
-  if (!isScheduledPostPublished(post) || !Array.isArray(metrics) || metrics.length === 0) {
+  const normalizedMetrics = normalizePerformanceMetrics(metrics)
+
+  if (!isScheduledPostPublished(post) || normalizedMetrics.length === 0) {
     return null
   }
 
@@ -93,8 +116,8 @@ export function findRelevantMetricForScheduledPost(post: ScheduledPost, metrics:
     eligiblePlatforms.add('instagram')
   }
 
-  const samePlatformMetrics = metrics.filter((metric) => metric.platform === post.platform)
-  const crossPostedMetrics = metrics.filter((metric) =>
+  const samePlatformMetrics = normalizedMetrics.filter((metric) => metric.platform === post.platform)
+  const crossPostedMetrics = normalizedMetrics.filter((metric) =>
     metric.platform !== post.platform && eligiblePlatforms.has(metric.platform)
   )
   const candidateMetrics = [...samePlatformMetrics, ...crossPostedMetrics]

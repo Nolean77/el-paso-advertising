@@ -620,6 +620,8 @@ async function fetchFacebookPostMetrics(facebookPostId, accessTokens) {
         caption: '',
         createdTime: null,
         likes: 0,
+        comments: 0,
+        shares: 0,
       }
 
       try {
@@ -633,7 +635,8 @@ async function fetchFacebookPostMetrics(facebookPostId, accessTokens) {
       }
 
       const reach = insightData.reach
-      const engagedUsers = insightData.engagedUsers
+      const approxEngagementCount = metadata.likes + metadata.comments + metadata.shares
+      const engagedUsers = Math.max(insightData.engagedUsers, approxEngagementCount)
       const likes = Math.max(metadata.likes, insightData.likeCount)
       const engagementRate = reach > 0 ? Number(((engagedUsers / reach) * 100).toFixed(2)) : 0
 
@@ -809,6 +812,8 @@ async function fetchFacebookPostMetadata(facebookPostId, pageAccessToken) {
     [
       'message',
       'created_time',
+      'shares',
+      'comments.limit(0).summary(total_count)',
       'reactions.type(LIKE).limit(0).summary(total_count)',
     ].join(',')
   )
@@ -825,6 +830,8 @@ async function fetchFacebookPostMetadata(facebookPostId, pageAccessToken) {
     caption: typeof json.message === 'string' ? json.message.trim() : '',
     createdTime: typeof json.created_time === 'string' ? json.created_time : null,
     likes: Number(json.likes?.summary?.total_count ?? json.reactions?.summary?.total_count ?? 0) || 0,
+    comments: Number(json.comments?.summary?.total_count ?? 0) || 0,
+    shares: Number(json.shares?.count ?? 0) || 0,
   }
 }
 

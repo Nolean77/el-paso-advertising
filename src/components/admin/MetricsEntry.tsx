@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Performance } from '@/components/Performance'
 import type { PerformanceMetric } from '@/lib/types'
 import { META_WORKER_BASE_URL, fetchPerformanceMetricsForClient, syncFacebookMetricsForClient } from '@/lib/metaMetrics'
+import { normalizePerformanceMetrics, toMetricNumber } from '@/lib/utils'
 import { toast } from 'sonner'
 
 interface MetricsEntryProps {
@@ -49,19 +50,19 @@ export function MetricsEntry({ selectedClientId, selectedClientName }: MetricsEn
         throw error
       }
 
-      const directMetrics = (data as PerformanceMetric[]) ?? []
+      const directMetrics = normalizePerformanceMetrics((data as PerformanceMetric[]) ?? [])
 
       if (directMetrics.length > 0 || !META_WORKER_BASE_URL) {
         setMetrics(directMetrics)
         return
       }
 
-      const fallbackMetrics = await fetchPerformanceMetricsForClient(selectedClientId)
+      const fallbackMetrics = normalizePerformanceMetrics(await fetchPerformanceMetricsForClient(selectedClientId))
       setMetrics(fallbackMetrics)
     } catch {
       if (META_WORKER_BASE_URL) {
         try {
-          const fallbackMetrics = await fetchPerformanceMetricsForClient(selectedClientId)
+          const fallbackMetrics = normalizePerformanceMetrics(await fetchPerformanceMetricsForClient(selectedClientId))
           setMetrics(fallbackMetrics)
           return
         } catch {
@@ -360,9 +361,9 @@ export function MetricsEntry({ selectedClientId, selectedClientName }: MetricsEn
                       </div>
                       <p className="text-sm text-muted-foreground line-clamp-2 whitespace-pre-line">{metric.caption}</p>
                       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                        <span>Reach: <span className="font-medium text-foreground">{metric.reach.toLocaleString()}</span></span>
-                        <span>Likes: <span className="font-medium text-foreground">{metric.likes.toLocaleString()}</span></span>
-                        <span>Engagement: <span className="font-medium text-foreground">{metric.engagement_rate.toFixed(1)}%</span></span>
+                        <span>Reach: <span className="font-medium text-foreground">{toMetricNumber(metric.reach).toLocaleString()}</span></span>
+                        <span>Likes: <span className="font-medium text-foreground">{toMetricNumber(metric.likes).toLocaleString()}</span></span>
+                        <span>Engagement: <span className="font-medium text-foreground">{toMetricNumber(metric.engagement_rate).toFixed(1)}%</span></span>
                       </div>
                     </div>
 

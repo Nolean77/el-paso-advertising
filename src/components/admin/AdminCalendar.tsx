@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { ContentCalendar } from '@/components/ContentCalendar'
 import { supabase } from '@/lib/supabase'
-import { buildApprovalImagePlaceholder, findRelevantMetricForScheduledPost, isScheduledPostPublished, normalizePerformanceMetrics, parseApprovalCaption } from '@/lib/utils'
+import { buildApprovalImagePlaceholder, parseApprovalCaption, shouldRetryMetricSync, sortPerformanceMetricsForTimeline } from '@/lib/utils'
 import { META_WORKER_BASE_URL, fetchPerformanceMetricsForClient, syncFacebookMetricsForClient } from '@/lib/metaMetrics'
 import type { ApprovalPost, ScheduledPost, PerformanceMetric } from '@/lib/types'
 
@@ -30,7 +30,7 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
       const [scheduledRes, approvalsRes, metricsRes] = await Promise.all([
         supabase.from('scheduled_posts').select('*').eq('user_id', selectedClientId).eq('status', 'scheduled').order('date', { ascending: true }),
         supabase.from('approval_posts').select('*').eq('user_id', selectedClientId).order('created_at', { ascending: false }),
-        supabase.from('performance_metrics').select('*').eq('user_id', selectedClientId).order('date', { ascending: false }),
+        supabase.from('performance_metrics').select('*').eq('user_id', selectedClientId).order('date', { ascending: true }).order('created_at', { ascending: true }),
       ])
 
       let nextMetrics = (metricsRes.data as PerformanceMetric[]) ?? []
@@ -45,7 +45,7 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
 
       setScheduledPosts((scheduledRes.data as ScheduledPost[]) ?? [])
       setApprovalPosts((approvalsRes.data as ApprovalPost[]) ?? [])
-      setPerformanceMetrics(normalizePerformanceMetrics(nextMetrics))
+      setPerformanceMetrics(sortPerformanceMetricsForTimeline(nextMetrics))
       setLoading(false)
     }
 
@@ -58,9 +58,7 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
     }
 
     const needsMetricSync = scheduledPosts.some((post) =>
-      Boolean(post.posted_to_facebook || post.facebook_post_id) &&
-      isScheduledPostPublished(post) &&
-      !findRelevantMetricForScheduledPost(post, performanceMetrics)
+      shouldRetryMetricSync(post, performanceMetrics)
     )
 
     if (!needsMetricSync) {
@@ -81,7 +79,8 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
           .from('performance_metrics')
           .select('*')
           .eq('user_id', selectedClientId)
-          .order('date', { ascending: false })
+          .order('date', { ascending: true })
+          .order('created_at', { ascending: true })
 
         if (isCancelled) {
           return
@@ -90,13 +89,13 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
         const directMetrics = !error ? ((data as PerformanceMetric[]) ?? []) : []
 
         if (directMetrics.length > 0 || !META_WORKER_BASE_URL) {
-          setPerformanceMetrics(normalizePerformanceMetrics(directMetrics))
+          setPerformanceMetrics(sortPerformanceMetricsForTimeline(directMetrics))
           return
         }
 
         const fallbackMetrics = await fetchPerformanceMetricsForClient(selectedClientId)
         if (!isCancelled) {
-          setPerformanceMetrics(normalizePerformanceMetrics(fallbackMetrics))
+          setPerformanceMetrics(sortPerformanceMetricsForTimeline(fallbackMetrics))
         }
       } catch {
         // Keep auto-sync quiet in the admin calendar.
@@ -179,7 +178,8 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
             .from('performance_metrics')
             .select('*')
             .eq('user_id', selectedClientId)
-            .order('date', { ascending: false })
+            .order('date', { ascending: true })
+            .order('created_at', { ascending: true })
 
           let nextMetrics = !error ? ((data as PerformanceMetric[]) ?? []) : []
 
@@ -191,7 +191,7 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
             }
           }
 
-          setPerformanceMetrics(normalizePerformanceMetrics(nextMetrics))
+          setPerformanceMetrics(sortPerformanceMetricsForTimeline(nextMetrics))
         }
       )
       .subscribe()

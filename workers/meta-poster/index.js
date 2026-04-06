@@ -579,7 +579,7 @@ async function listPerformanceMetrics(env, options = {}) {
   const query = {
     select: '*',
     user_id: `eq.${options.clientId}`,
-    order: 'date.desc',
+    order: 'date.asc,created_at.asc',
     limit: '200',
   }
 

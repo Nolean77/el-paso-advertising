@@ -3,7 +3,7 @@ import { ChartBar, Eye, Heart, TrendUp } from '@phosphor-icons/react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { translations, type Language } from '@/lib/translations'
 import type { PerformanceMetric } from '@/lib/types'
-import { normalizePerformanceMetrics, toMetricNumber } from '@/lib/utils'
+import { sortPerformanceMetricsForTimeline, toMetricNumber } from '@/lib/utils'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts'
 
 interface PerformanceProps {
@@ -15,14 +15,14 @@ export function Performance({ metrics, language }: PerformanceProps) {
   const t = translations[language].performance
 
   const { totalReach, totalLikes, avgEngagement, chartData } = useMemo(() => {
-    const normalizedMetrics = normalizePerformanceMetrics(metrics)
-    const totalReach = normalizedMetrics.reduce((sum, metric) => sum + toMetricNumber(metric.reach), 0)
-    const totalLikes = normalizedMetrics.reduce((sum, metric) => sum + toMetricNumber(metric.likes), 0)
-    const avgEngagement = normalizedMetrics.length > 0
-      ? normalizedMetrics.reduce((sum, metric) => sum + toMetricNumber(metric.engagement_rate), 0) / normalizedMetrics.length
+    const timelineMetrics = sortPerformanceMetricsForTimeline(metrics)
+    const totalReach = timelineMetrics.reduce((sum, metric) => sum + toMetricNumber(metric.reach), 0)
+    const totalLikes = timelineMetrics.reduce((sum, metric) => sum + toMetricNumber(metric.likes), 0)
+    const avgEngagement = timelineMetrics.length > 0
+      ? timelineMetrics.reduce((sum, metric) => sum + toMetricNumber(metric.engagement_rate), 0) / timelineMetrics.length
       : 0
 
-    const chartData = normalizedMetrics.slice(0, 12).map((metric) => ({
+    const chartData = timelineMetrics.slice(-12).map((metric) => ({
       name: metric.caption.length > 20 ? `${metric.caption.slice(0, 20)}...` : metric.caption,
       reach: toMetricNumber(metric.reach),
       likes: toMetricNumber(metric.likes),

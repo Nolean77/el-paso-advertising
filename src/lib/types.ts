@@ -51,6 +51,7 @@ export interface PerformanceMetric {
   user_id: string
   caption: string
   date: string
+  created_at?: string
   platform: 'instagram' | 'facebook' | 'twitter' | 'linkedin'
   reach: number
   likes: number

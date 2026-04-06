@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Performance } from '@/components/Performance'
 import type { PerformanceMetric } from '@/lib/types'
 import { META_WORKER_BASE_URL, fetchPerformanceMetricsForClient, syncFacebookMetricsForClient } from '@/lib/metaMetrics'
-import { normalizePerformanceMetrics, toMetricNumber } from '@/lib/utils'
+import { sortPerformanceMetricsForTimeline, toMetricNumber } from '@/lib/utils'
 import { toast } from 'sonner'
 
 interface MetricsEntryProps {
@@ -44,25 +44,26 @@ export function MetricsEntry({ selectedClientId, selectedClientName }: MetricsEn
         .from('performance_metrics')
         .select('*')
         .eq('user_id', selectedClientId)
-        .order('date', { ascending: false })
+        .order('date', { ascending: true })
+        .order('created_at', { ascending: true })
 
       if (error) {
         throw error
       }
 
-      const directMetrics = normalizePerformanceMetrics((data as PerformanceMetric[]) ?? [])
+      const directMetrics = sortPerformanceMetricsForTimeline((data as PerformanceMetric[]) ?? [])
 
       if (directMetrics.length > 0 || !META_WORKER_BASE_URL) {
         setMetrics(directMetrics)
         return
       }
 
-      const fallbackMetrics = normalizePerformanceMetrics(await fetchPerformanceMetricsForClient(selectedClientId))
+      const fallbackMetrics = sortPerformanceMetricsForTimeline(await fetchPerformanceMetricsForClient(selectedClientId))
       setMetrics(fallbackMetrics)
     } catch {
       if (META_WORKER_BASE_URL) {
         try {
-          const fallbackMetrics = normalizePerformanceMetrics(await fetchPerformanceMetricsForClient(selectedClientId))
+          const fallbackMetrics = sortPerformanceMetricsForTimeline(await fetchPerformanceMetricsForClient(selectedClientId))
           setMetrics(fallbackMetrics)
           return
         } catch {

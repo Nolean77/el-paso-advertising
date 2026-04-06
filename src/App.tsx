@@ -16,7 +16,7 @@ import { Approvals } from '@/components/Approvals'
 import { Performance } from '@/components/Performance'
 import { Requests } from '@/components/Requests'
 import { AdminPortal } from '@/components/admin/AdminPortal'
-import { buildApprovalImagePlaceholder, encodeApprovalCaption, findRelevantMetricForScheduledPost, isScheduledPostPublished, normalizePerformanceMetrics, parseApprovalCaption, resolveUserRole } from '@/lib/utils'
+import { buildApprovalImagePlaceholder, encodeApprovalCaption, parseApprovalCaption, resolveUserRole, shouldRetryMetricSync, sortPerformanceMetricsForTimeline } from '@/lib/utils'
 import { syncFacebookMetricsForClient } from '@/lib/metaMetrics'
 import type { User, ScheduledPost, ApprovalPost, PerformanceMetric, ContentRequest, RequestSubmission } from '@/lib/types'
 
@@ -137,7 +137,7 @@ function App() {
       const [scheduledRes, approvalsRes, metricsRes, requestsRes] = await Promise.allSettled([
         supabase.from('scheduled_posts').select('*').eq('user_id', user.id).eq('status', 'scheduled').order('date', { ascending: true }),
         supabase.from('approval_posts').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-        supabase.from('performance_metrics').select('*').eq('user_id', user.id).order('date', { ascending: false }),
+        supabase.from('performance_metrics').select('*').eq('user_id', user.id).order('date', { ascending: true }).order('created_at', { ascending: true }),
         supabase.from('content_requests').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
       ])
 
@@ -160,7 +160,7 @@ function App() {
       }
 
       if (metricsRes.status === 'fulfilled' && !metricsRes.value.error) {
-        setPerformanceMetrics(normalizePerformanceMetrics((metricsRes.value.data as PerformanceMetric[]) ?? []))
+        setPerformanceMetrics(sortPerformanceMetricsForTimeline((metricsRes.value.data as PerformanceMetric[]) ?? []))
       } else {
         failedSections.push('metrics')
       }
@@ -246,13 +246,14 @@ function App() {
             .from('performance_metrics')
             .select('*')
             .eq('user_id', user.id)
-            .order('date', { ascending: false })
+            .order('date', { ascending: true })
+            .order('created_at', { ascending: true })
 
           if (!isMounted || error) {
             return
           }
 
-          setPerformanceMetrics(normalizePerformanceMetrics((data as PerformanceMetric[]) ?? []))
+          setPerformanceMetrics(sortPerformanceMetricsForTimeline((data as PerformanceMetric[]) ?? []))
         }
       )
       .subscribe()
@@ -271,9 +272,7 @@ function App() {
     }
 
     const needsMetricSync = scheduledPosts.some((post) =>
-      Boolean(post.posted_to_facebook || post.facebook_post_id) &&
-      isScheduledPostPublished(post) &&
-      !findRelevantMetricForScheduledPost(post, performanceMetrics)
+      shouldRetryMetricSync(post, performanceMetrics)
     )
 
     if (!needsMetricSync) {
@@ -294,10 +293,11 @@ function App() {
           .from('performance_metrics')
           .select('*')
           .eq('user_id', user.id)
-          .order('date', { ascending: false })
+          .order('date', { ascending: true })
+          .order('created_at', { ascending: true })
 
         if (!isCancelled && !error) {
-          setPerformanceMetrics(normalizePerformanceMetrics((data as PerformanceMetric[]) ?? []))
+          setPerformanceMetrics(sortPerformanceMetricsForTimeline((data as PerformanceMetric[]) ?? []))
         }
       } catch {
         // Keep background metric sync failures silent in the client view.

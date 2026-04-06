@@ -88,6 +88,32 @@ export function normalizePerformanceMetrics(metrics: PerformanceMetric[]) {
   }))
 }
 
+function getMetricSortTimestamp(metric: PerformanceMetric) {
+  const createdAtTime = Date.parse(String(metric.created_at || ''))
+  if (Number.isFinite(createdAtTime)) {
+    return createdAtTime
+  }
+
+  const dateOnlyTime = Date.parse(`${String(metric.date || '')}T00:00:00Z`)
+  return Number.isFinite(dateOnlyTime) ? dateOnlyTime : 0
+}
+
+export function sortPerformanceMetricsForTimeline(metrics: PerformanceMetric[]) {
+  return [...normalizePerformanceMetrics(metrics)].sort((left, right) => {
+    const dateComparison = String(left.date || '').localeCompare(String(right.date || ''))
+    if (dateComparison !== 0) {
+      return dateComparison
+    }
+
+    const timeComparison = getMetricSortTimestamp(left) - getMetricSortTimestamp(right)
+    if (timeComparison !== 0) {
+      return timeComparison
+    }
+
+    return String(left.id || '').localeCompare(String(right.id || ''))
+  })
+}
+
 export function isScheduledPostPublished(post: Pick<ScheduledPost, 'posted_at' | 'posted_to_facebook' | 'posted_to_instagram'>) {
   return Boolean(post.posted_at || post.posted_to_facebook || post.posted_to_instagram)
 }
@@ -153,6 +179,28 @@ export function findRelevantMetricForScheduledPost(post: ScheduledPost, metrics:
   })
 
   return sameDayPartialMatch || null
+}
+
+export function shouldRetryMetricSync(post: ScheduledPost, metrics: PerformanceMetric[]) {
+  if (!Boolean(post.posted_to_facebook || post.facebook_post_id) || !isScheduledPostPublished(post)) {
+    return false
+  }
+
+  const matchingMetric = findRelevantMetricForScheduledPost(post, metrics)
+  if (!matchingMetric) {
+    return true
+  }
+
+  const publishedAt = Date.parse(String(post.posted_at || post.scheduled_at || post.date || ''))
+  const withinRetryWindow = !Number.isNaN(publishedAt)
+    ? (Date.now() - publishedAt) <= 72 * 60 * 60 * 1000
+    : true
+
+  if (!withinRetryWindow) {
+    return false
+  }
+
+  return toMetricNumber(matchingMetric.reach) <= 0 || toMetricNumber(matchingMetric.engagement_rate) <= 0
 }
 
 function escapeSvgText(value: string) {

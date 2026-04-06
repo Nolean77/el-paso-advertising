@@ -7,6 +7,8 @@ import {
   normalizePerformanceMetrics,
   parseApprovalCaption,
   resolveUserRole,
+  shouldRetryMetricSync,
+  sortPerformanceMetricsForTimeline,
 } from './utils'
 import type { PerformanceMetric, ScheduledPost } from './types'
 
@@ -165,6 +167,75 @@ describe('approval caption helpers', () => {
     expect(metric.reach).toBe(1200)
     expect(metric.likes).toBe(85)
     expect(metric.engagement_rate).toBe(7.25)
+  })
+
+  it('sorts performance metrics into chronological timeline order', () => {
+    const ordered = sortPerformanceMetricsForTimeline([
+      {
+        id: 'metric-2',
+        user_id: 'user-1',
+        caption: 'Second post',
+        date: '2026-04-07',
+        created_at: '2026-04-07T10:00:00.000Z',
+        platform: 'facebook',
+        reach: 800,
+        likes: 30,
+        engagement_rate: 3.8,
+      },
+      {
+        id: 'metric-1',
+        user_id: 'user-1',
+        caption: 'First post',
+        date: '2026-04-06',
+        created_at: '2026-04-06T09:00:00.000Z',
+        platform: 'facebook',
+        reach: 600,
+        likes: 20,
+        engagement_rate: 3.2,
+      },
+      {
+        id: 'metric-3',
+        user_id: 'user-1',
+        caption: 'Third post',
+        date: '2026-04-07',
+        created_at: '2026-04-07T11:00:00.000Z',
+        platform: 'facebook',
+        reach: 900,
+        likes: 40,
+        engagement_rate: 4.4,
+      },
+    ])
+
+    expect(ordered.map((metric) => metric.id)).toEqual(['metric-1', 'metric-2', 'metric-3'])
+  })
+
+  it('retries sync when a recent published post still has incomplete engagement data', () => {
+    const post: ScheduledPost = {
+      id: 'post-retry',
+      user_id: 'user-1',
+      date: '2026-04-06',
+      platform: 'facebook',
+      caption: 'Grand opening this weekend',
+      image_url: 'https://example.com/post-retry.jpg',
+      status: 'scheduled',
+      posted_to_facebook: true,
+      posted_to_instagram: false,
+      posted_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      facebook_post_id: 'fb-post-retry',
+    }
+
+    const incompleteMetric: PerformanceMetric = {
+      id: 'metric-retry',
+      user_id: 'user-1',
+      caption: 'Grand opening this weekend',
+      date: '2026-04-06',
+      platform: 'facebook',
+      reach: 1200,
+      likes: 35,
+      engagement_rate: 0,
+    }
+
+    expect(shouldRetryMetricSync(post, [incompleteMetric])).toBe(true)
   })
 
   it('builds a safe SVG placeholder', () => {

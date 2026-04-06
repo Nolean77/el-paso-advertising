@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { ContentCalendar } from '@/components/ContentCalendar'
 import { supabase } from '@/lib/supabase'
-import { buildApprovalImagePlaceholder, parseApprovalCaption } from '@/lib/utils'
+import { buildApprovalImagePlaceholder, findRelevantMetricForScheduledPost, isScheduledPostPublished, parseApprovalCaption } from '@/lib/utils'
+import { syncFacebookMetricsForClient } from '@/lib/metaMetrics'
 import type { ApprovalPost, ScheduledPost, PerformanceMetric } from '@/lib/types'
 
 interface AdminCalendarProps {
@@ -38,8 +39,54 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
       setLoading(false)
     }
 
-    loadData()
+    void loadData()
   }, [selectedClientId])
+
+  useEffect(() => {
+    if (!selectedClientId) {
+      return
+    }
+
+    const needsMetricSync = scheduledPosts.some((post) =>
+      post.platform === 'facebook' &&
+      isScheduledPostPublished(post) &&
+      !findRelevantMetricForScheduledPost(post, performanceMetrics)
+    )
+
+    if (!needsMetricSync) {
+      return
+    }
+
+    let isCancelled = false
+
+    const syncMissingMetrics = async () => {
+      try {
+        const result = await syncFacebookMetricsForClient(selectedClientId)
+
+        if (isCancelled || !result || (result.syncedCount ?? 0) === 0) {
+          return
+        }
+
+        const { data, error } = await supabase
+          .from('performance_metrics')
+          .select('*')
+          .eq('user_id', selectedClientId)
+          .order('date', { ascending: false })
+
+        if (!isCancelled && !error) {
+          setPerformanceMetrics((data as PerformanceMetric[]) ?? [])
+        }
+      } catch {
+        // Keep auto-sync quiet in the admin calendar.
+      }
+    }
+
+    void syncMissingMetrics()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [performanceMetrics, scheduledPosts, selectedClientId])
 
   const syncRequestStatusFromApproval = async (post: ApprovalPost, approvalStatus: ApprovalPost['status']) => {
     const { meta } = parseApprovalCaption(post.caption)
@@ -57,6 +104,35 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
     const { caption, meta } = parseApprovalCaption(post.caption)
     const scheduledAt = meta.requestedDate || null
     const scheduledDate = (scheduledAt || new Date().toISOString()).split('T')[0]
+    const scheduledPayload = {
+      date: scheduledDate,
+      platform: post.platform,
+      caption,
+      image_url: post.image_url || buildApprovalImagePlaceholder(meta.title || caption),
+      status: 'scheduled' as const,
+      scheduled_at: scheduledAt,
+      auto_post_enabled: meta.autoPostEnabled ?? true,
+      post_type: meta.postType || 'photo',
+      post_error: null,
+    }
+
+    if (meta.sourceScheduledPostId) {
+      const { data: updatedExistingPost, error: updateExistingError } = await supabase
+        .from('scheduled_posts')
+        .update(scheduledPayload)
+        .eq('id', meta.sourceScheduledPostId)
+        .eq('user_id', post.user_id)
+        .select()
+        .single()
+
+      if (!updateExistingError && updatedExistingPost) {
+        setScheduledPosts((currentPosts) => {
+          const remainingPosts = currentPosts.filter((currentPost) => currentPost.id !== updatedExistingPost.id)
+          return [...remainingPosts, updatedExistingPost as ScheduledPost].sort((a, b) => a.date.localeCompare(b.date))
+        })
+        return
+      }
+    }
 
     const { data: existingPosts, error: duplicateCheckError } = await supabase
       .from('scheduled_posts')
@@ -92,14 +168,7 @@ export function AdminCalendar({ selectedClientId, selectedClientName }: AdminCal
       .from('scheduled_posts')
       .insert([{
         user_id: post.user_id,
-        date: scheduledDate,
-        platform: post.platform,
-        caption,
-        image_url: post.image_url || buildApprovalImagePlaceholder(meta.title || caption),
-        status: 'scheduled',
-        scheduled_at: scheduledAt,
-        auto_post_enabled: meta.autoPostEnabled ?? true,
-        post_type: meta.postType || 'photo',
+        ...scheduledPayload,
       }])
       .select()
       .single()

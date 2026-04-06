@@ -9,18 +9,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Performance } from '@/components/Performance'
 import type { PerformanceMetric } from '@/lib/types'
+import { META_WORKER_BASE_URL, syncFacebookMetricsForClient } from '@/lib/metaMetrics'
 import { toast } from 'sonner'
 
 interface MetricsEntryProps {
   selectedClientId?: string
   selectedClientName?: string
 }
-
-const DEFAULT_META_REDIRECT_URI = 'https://ep-meta-poster.workers.dev/oauth/meta/callback'
-const META_WORKER_BASE_URL = (
-  import.meta.env.VITE_META_WORKER_URL ||
-  (import.meta.env.VITE_META_REDIRECT_URI || DEFAULT_META_REDIRECT_URI).replace(/\/oauth\/meta\/callback$/, '')
-).replace(/\/$/, '')
 
 export function MetricsEntry({ selectedClientId, selectedClientName }: MetricsEntryProps) {
   const [platform, setPlatform] = useState('')
@@ -62,6 +57,25 @@ export function MetricsEntry({ selectedClientId, selectedClientName }: MetricsEn
     void loadMetrics()
   }, [loadMetrics])
 
+  useEffect(() => {
+    if (!selectedClientId || !META_WORKER_BASE_URL) {
+      return
+    }
+
+    const autoSyncMetrics = async () => {
+      try {
+        const result = await syncFacebookMetricsForClient(selectedClientId)
+        if ((result?.syncedCount ?? 0) > 0) {
+          await loadMetrics()
+        }
+      } catch {
+        // Keep automatic sync failures quiet until the admin explicitly requests a sync.
+      }
+    }
+
+    void autoSyncMetrics()
+  }, [loadMetrics, selectedClientId])
+
   const handlePullFacebookMetrics = async () => {
     if (!selectedClientId) {
       toast.error('Select a client from the portal header first.')
@@ -76,21 +90,10 @@ export function MetricsEntry({ selectedClientId, selectedClientName }: MetricsEn
     setSyncing(true)
 
     try {
-      const response = await fetch(`${META_WORKER_BASE_URL}/metrics/sync`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          clientId: selectedClientId,
-          platform: 'facebook',
-        }),
-      })
+      const result = await syncFacebookMetricsForClient(selectedClientId)
 
-      const result = await response.json().catch(() => ({}))
-
-      if (!response.ok || !result.ok) {
-        throw new Error(result.error || 'Unable to pull Facebook metrics.')
+      if (!result) {
+        throw new Error('Meta worker URL is not configured.')
       }
 
       await loadMetrics()

@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import type { ApprovalWorkflowMeta } from "./types"
+import type { ApprovalWorkflowMeta, PerformanceMetric, ScheduledPost } from "./types"
 
 const APPROVAL_META_PREFIX = '[[EPA_META:'
 const APPROVAL_META_SUFFIX = ']]'
@@ -58,6 +58,64 @@ export function parseApprovalCaption(rawCaption: string) {
   } catch {
     return { caption: visibleCaption || rawCaption, meta: {} as ApprovalWorkflowMeta }
   }
+}
+
+export function normalizeCalendarCaption(value: string) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+}
+
+export function isScheduledPostPublished(post: Pick<ScheduledPost, 'posted_at' | 'posted_to_facebook' | 'posted_to_instagram'>) {
+  return Boolean(post.posted_at || post.posted_to_facebook || post.posted_to_instagram)
+}
+
+export function findRelevantMetricForScheduledPost(post: ScheduledPost, metrics: PerformanceMetric[]) {
+  if (!isScheduledPostPublished(post) || !Array.isArray(metrics) || metrics.length === 0) {
+    return null
+  }
+
+  const postCaption = normalizeCalendarCaption(post.caption)
+  const postDate = String(post.posted_at || post.scheduled_at || post.date || '').split('T')[0]
+
+  if (!postCaption) {
+    return null
+  }
+
+  const samePlatformMetrics = metrics.filter((metric) => metric.platform === post.platform)
+
+  const exactMatches = samePlatformMetrics.filter((metric) =>
+    normalizeCalendarCaption(metric.caption) === postCaption
+  )
+
+  const datedExactMatch = exactMatches.find((metric) => !postDate || metric.date === postDate)
+  if (datedExactMatch) {
+    return datedExactMatch
+  }
+
+  if (exactMatches.length > 0) {
+    return exactMatches[0]
+  }
+
+  if (!postDate) {
+    return null
+  }
+
+  const sameDayPartialMatch = samePlatformMetrics.find((metric) => {
+    if (metric.date !== postDate) {
+      return false
+    }
+
+    const metricCaption = normalizeCalendarCaption(metric.caption)
+    if (!metricCaption || metricCaption.length < 8 || postCaption.length < 8) {
+      return false
+    }
+
+    return postCaption.includes(metricCaption) || metricCaption.includes(postCaption)
+  })
+
+  return sameDayPartialMatch || null
 }
 
 function escapeSvgText(value: string) {

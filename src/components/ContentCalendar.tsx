@@ -7,9 +7,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { PlatformIcon } from '@/components/PlatformIcon'
 import { translations, type Language } from '@/lib/translations'
 import type { ScheduledPost, ApprovalPost, PerformanceMetric } from '@/lib/types'
-import { parseApprovalCaption } from '@/lib/utils'
+import { findRelevantMetricForScheduledPost, parseApprovalCaption } from '@/lib/utils'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { toast } from 'sonner'
 
 interface ContentCalendarProps {
   posts: ScheduledPost[]
@@ -17,6 +18,7 @@ interface ContentCalendarProps {
   metrics?: PerformanceMetric[]
   onUpdatePost?: (postId: string, status: ApprovalPost['status'], feedback?: string) => Promise<boolean | void> | boolean | void
   onDeletePost?: (postId: string) => void | Promise<void>
+  onRequestEdit?: (scheduledPostId: string, feedback: string) => Promise<boolean | void> | boolean | void
   language: Language
 }
 
@@ -30,46 +32,17 @@ type CalendarItem = {
   autoPostEnabled?: boolean
   postedToFacebook?: boolean
   postedToInstagram?: boolean
+  postedAt?: string | null
   postError?: string | null
   feedback?: string
   approvalId?: string
   scheduledId?: string
   metric?: PerformanceMetric | null
+  editPending?: boolean
+  editReviewStatus?: ApprovalPost['status'] | null
 }
 
-function normalizeCalendarCaption(value: string) {
-  return String(value || '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase()
-}
-
-function findMetricForPost(post: ScheduledPost, metrics: PerformanceMetric[]) {
-  const postCaption = normalizeCalendarCaption(post.caption)
-  const postDate = String(post.scheduled_at || post.date || '').split('T')[0]
-
-  const exactMatch = metrics.find((metric) =>
-    metric.platform === post.platform &&
-    normalizeCalendarCaption(metric.caption) === postCaption
-  )
-
-  if (exactMatch) {
-    return exactMatch
-  }
-
-  const datedMetrics = metrics.filter((metric) =>
-    metric.platform === post.platform && metric.date === postDate
-  )
-
-  const partialMatch = datedMetrics.find((metric) => {
-    const metricCaption = normalizeCalendarCaption(metric.caption)
-    return postCaption.includes(metricCaption) || metricCaption.includes(postCaption)
-  })
-
-  return partialMatch || datedMetrics[0] || null
-}
-
-export function ContentCalendar({ posts, approvalPosts = [], metrics = [], onUpdatePost, onDeletePost, language }: ContentCalendarProps) {
+export function ContentCalendar({ posts, approvalPosts = [], metrics = [], onUpdatePost, onDeletePost, onRequestEdit, language }: ContentCalendarProps) {
   const [activeComment, setActiveComment] = useState<string | null>(null)
   const [commentText, setCommentText] = useState('')
   const t = translations[language].calendar
@@ -97,20 +70,31 @@ export function ContentCalendar({ posts, approvalPosts = [], metrics = [], onUpd
 
     const approvedItems: CalendarItem[] = posts
       .filter((post) => post.status === 'scheduled')
-      .map((post) => ({
-        id: `scheduled-${post.id}`,
-        scheduledId: post.id,
-        date: post.scheduled_at || post.date,
-        platform: post.platform,
-        caption: post.caption,
-        imageUrl: post.image_url,
-        status: 'approved' as const,
-        autoPostEnabled: post.auto_post_enabled ?? true,
-        postedToFacebook: post.posted_to_facebook ?? false,
-        postedToInstagram: post.posted_to_instagram ?? false,
-        postError: post.post_error,
-        metric: findMetricForPost(post, metrics),
-      }))
+      .map((post) => {
+        const linkedEditRequest = approvalPosts.find((approvalPost) => {
+          const { meta } = parseApprovalCaption(approvalPost.caption)
+          return meta.sourceScheduledPostId === post.id && meta.changeType === 'revision' && approvalPost.status !== 'approved'
+        })
+
+        return {
+          id: `scheduled-${post.id}`,
+          scheduledId: post.id,
+          date: post.scheduled_at || post.date,
+          platform: post.platform,
+          caption: post.caption,
+          imageUrl: post.image_url,
+          status: 'approved' as const,
+          autoPostEnabled: post.auto_post_enabled ?? true,
+          postedToFacebook: post.posted_to_facebook ?? false,
+          postedToInstagram: post.posted_to_instagram ?? false,
+          postedAt: post.posted_at,
+          postError: post.post_error,
+          feedback: linkedEditRequest?.feedback,
+          editPending: Boolean(linkedEditRequest),
+          editReviewStatus: linkedEditRequest?.status ?? null,
+          metric: findRelevantMetricForScheduledPost(post, metrics),
+        }
+      })
 
     return [...pendingApprovalItems, ...approvedItems].sort((a, b) => a.date.localeCompare(b.date))
   }, [approvalPosts, metrics, posts])
@@ -123,14 +107,40 @@ export function ContentCalendar({ posts, approvalPosts = [], metrics = [], onUpd
   const handleRequestChanges = async (approvalId?: string) => {
     if (!approvalId || !onUpdatePost) return
 
-    if (activeComment === approvalId) {
+    const commentKey = `approval:${approvalId}`
+
+    if (activeComment === commentKey) {
       await onUpdatePost(approvalId, 'changes-requested', commentText)
       setActiveComment(null)
       setCommentText('')
       return
     }
 
-    setActiveComment(approvalId)
+    setActiveComment(commentKey)
+  }
+
+  const handleRequestEdit = async (scheduledId?: string) => {
+    if (!scheduledId || !onRequestEdit) return
+
+    const commentKey = `scheduled:${scheduledId}`
+
+    if (activeComment === commentKey) {
+      const feedback = commentText.trim()
+
+      if (!feedback) {
+        toast.error(language === 'en' ? 'Please add the requested edit first.' : 'Primero agrega la edición solicitada.')
+        return
+      }
+
+      const updated = await onRequestEdit(scheduledId, feedback)
+      if (updated !== false) {
+        setActiveComment(null)
+        setCommentText('')
+      }
+      return
+    }
+
+    setActiveComment(commentKey)
   }
 
   const handleRemove = async (scheduledId?: string) => {
@@ -193,7 +203,7 @@ export function ContentCalendar({ posts, approvalPosts = [], metrics = [], onUpd
                 </Badge>
               </div>
 
-              {item.status === 'approved' && item.autoPostEnabled && (
+              {item.status === 'approved' && (
                 <div className="flex flex-wrap gap-2">
                   {item.postedToFacebook && (
                     <Badge variant="outline" className="border-emerald-500/50 text-emerald-600">
@@ -205,12 +215,17 @@ export function ContentCalendar({ posts, approvalPosts = [], metrics = [], onUpd
                       IG Posted
                     </Badge>
                   )}
+                  {item.editPending && (
+                    <Badge variant="outline" className="border-amber-500/50 text-amber-700">
+                      {item.editReviewStatus === 'pending' ? t.awaitingReview : t.editRequested}
+                    </Badge>
+                  )}
                   {item.postError && (
                     <Badge variant="outline" className="border-destructive/50 text-destructive">
                       {language === 'en' ? 'Post Failed' : 'Error al publicar'}
                     </Badge>
                   )}
-                  {!item.postedToFacebook && !item.postedToInstagram && !item.postError && (
+                  {!item.postedToFacebook && !item.postedToInstagram && !item.postError && !item.editPending && item.autoPostEnabled && (
                     <Badge variant="outline" className="border-amber-500/50 text-amber-700">
                       {language === 'en' ? 'Pending Auto-Post' : 'Pendiente de publicación'}
                     </Badge>
@@ -248,7 +263,8 @@ export function ContentCalendar({ posts, approvalPosts = [], metrics = [], onUpd
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <CalendarIcon size={16} weight="bold" />
                 <time>
-                  {format(new Date(item.date), 'PPP', {
+                  {t.scheduled}{' '}
+                  {format(new Date(item.date), String(item.date).includes('T') ? 'PPP p' : 'PPP', {
                     locale: language === 'es' ? es : undefined,
                   })}
                 </time>
@@ -265,7 +281,7 @@ export function ContentCalendar({ posts, approvalPosts = [], metrics = [], onUpd
 
               {item.status === 'pending' && item.approvalId && (
                 <>
-                  {activeComment === item.approvalId && (
+                  {activeComment === `approval:${item.approvalId}` && (
                     <Textarea
                       placeholder={language === 'en' ? 'Add requested changes' : 'Agrega los cambios solicitados'}
                       value={commentText}
@@ -290,11 +306,34 @@ export function ContentCalendar({ posts, approvalPosts = [], metrics = [], onUpd
                       size="sm"
                     >
                       <PencilSimple size={18} weight="bold" />
-                      {activeComment === item.approvalId
+                      {activeComment === `approval:${item.approvalId}`
                         ? (language === 'en' ? 'Send' : 'Enviar')
                         : (language === 'en' ? 'Request Change' : 'Solicitar cambio')}
                     </Button>
                   </div>
+                </>
+              )}
+
+              {item.status === 'approved' && item.scheduledId && onRequestEdit && !item.postedToFacebook && !item.postedToInstagram && !item.postedAt && (
+                <>
+                  {activeComment === `scheduled:${item.scheduledId}` && (
+                    <Textarea
+                      placeholder={t.editComment}
+                      value={commentText}
+                      onChange={(e) => setCommentText(e.target.value)}
+                      className="min-h-[100px]"
+                    />
+                  )}
+
+                  <Button
+                    onClick={() => handleRequestEdit(item.scheduledId)}
+                    variant="outline"
+                    className="w-full gap-2"
+                    size="sm"
+                  >
+                    <PencilSimple size={18} weight="bold" />
+                    {activeComment === `scheduled:${item.scheduledId}` ? t.sendEdit : t.requestEdit}
+                  </Button>
                 </>
               )}
 

@@ -21,6 +21,11 @@ export const translations = {
       title: 'Upcoming Posts',
       scheduled: 'Scheduled for',
       empty: 'No upcoming posts scheduled',
+      requestEdit: 'Request Edit',
+      sendEdit: 'Send Edit Request',
+      editComment: 'Describe the updates you want before this post goes live',
+      editRequested: 'Edit Requested',
+      awaitingReview: 'Awaiting Review',
     },
     approvals: {
       title: 'Pending Approvals',
@@ -94,6 +99,11 @@ export const translations = {
       title: 'Próximas Publicaciones',
       scheduled: 'Programado para',
       empty: 'No hay publicaciones programadas',
+      requestEdit: 'Solicitar edición',
+      sendEdit: 'Enviar solicitud de edición',
+      editComment: 'Describe los cambios que quieres antes de que esta publicación salga al aire',
+      editRequested: 'Edición solicitada',
+      awaitingReview: 'En revisión',
     },
     approvals: {
       title: 'Aprobaciones Pendientes',

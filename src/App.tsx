@@ -11,7 +11,8 @@ import { LanguageToggle } from '@/components/LanguageToggle'
 import { supabase } from '@/lib/supabase'
 import type { Language } from '@/lib/translations'
 import { translations } from '@/lib/translations'
-import { buildApprovalImagePlaceholder, encodeApprovalCaption, parseApprovalCaption, resolveUserRole } from '@/lib/utils'
+import { buildApprovalImagePlaceholder, encodeApprovalCaption, findRelevantMetricForScheduledPost, isScheduledPostPublished, parseApprovalCaption, resolveUserRole } from '@/lib/utils'
+import { syncFacebookMetricsForClient } from '@/lib/metaMetrics'
 import type { User, ScheduledPost, ApprovalPost, PerformanceMetric, ContentRequest, RequestSubmission } from '@/lib/types'
 
 const ContentCalendar = lazy(() => import('@/components/ContentCalendar').then((module) => ({ default: module.ContentCalendar })))
@@ -183,6 +184,52 @@ function App() {
     }
   }, [user])
 
+  useEffect(() => {
+    if (!user) {
+      return
+    }
+
+    const needsMetricSync = scheduledPosts.some((post) =>
+      post.platform === 'facebook' &&
+      isScheduledPostPublished(post) &&
+      !findRelevantMetricForScheduledPost(post, performanceMetrics)
+    )
+
+    if (!needsMetricSync) {
+      return
+    }
+
+    let isCancelled = false
+
+    const syncMissingMetrics = async () => {
+      try {
+        const result = await syncFacebookMetricsForClient(user.id)
+
+        if (isCancelled || !result || (result.syncedCount ?? 0) === 0) {
+          return
+        }
+
+        const { data, error } = await supabase
+          .from('performance_metrics')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('date', { ascending: false })
+
+        if (!isCancelled && !error) {
+          setPerformanceMetrics((data as PerformanceMetric[]) ?? [])
+        }
+      } catch {
+        // Keep background metric sync failures silent in the client view.
+      }
+    }
+
+    void syncMissingMetrics()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [performanceMetrics, scheduledPosts, user])
+
   const syncRequestStatusFromApproval = async (post: ApprovalPost, approvalStatus: ApprovalPost['status']) => {
     const { meta } = parseApprovalCaption(post.caption)
     if (!meta.sourceRequestId) return
@@ -209,6 +256,35 @@ function App() {
     const { caption, meta } = parseApprovalCaption(post.caption)
     const scheduledAt = meta.requestedDate || null
     const scheduledDate = (scheduledAt || new Date().toISOString()).split('T')[0]
+    const scheduledPayload = {
+      date: scheduledDate,
+      platform: post.platform,
+      caption,
+      image_url: post.image_url || buildApprovalImagePlaceholder(meta.title || caption),
+      status: 'scheduled' as const,
+      scheduled_at: scheduledAt,
+      auto_post_enabled: meta.autoPostEnabled ?? true,
+      post_type: meta.postType || 'photo',
+      post_error: null,
+    }
+
+    if (meta.sourceScheduledPostId) {
+      const { data: updatedExistingPost, error: updateExistingError } = await supabase
+        .from('scheduled_posts')
+        .update(scheduledPayload)
+        .eq('id', meta.sourceScheduledPostId)
+        .eq('user_id', post.user_id)
+        .select()
+        .single()
+
+      if (!updateExistingError && updatedExistingPost) {
+        setScheduledPosts((currentPosts) => {
+          const remainingPosts = currentPosts.filter((currentPost) => currentPost.id !== updatedExistingPost.id)
+          return [...remainingPosts, updatedExistingPost as ScheduledPost].sort((a, b) => a.date.localeCompare(b.date))
+        })
+        return
+      }
+    }
 
     const { data: existingPosts, error: duplicateCheckError } = await supabase
       .from('scheduled_posts')
@@ -246,14 +322,7 @@ function App() {
       .from('scheduled_posts')
       .insert([{
         user_id: post.user_id,
-        date: scheduledDate,
-        platform: post.platform,
-        caption,
-        image_url: post.image_url || buildApprovalImagePlaceholder(meta.title || caption),
-        status: 'scheduled',
-        scheduled_at: scheduledAt,
-        auto_post_enabled: meta.autoPostEnabled ?? true,
-        post_type: meta.postType || 'photo',
+        ...scheduledPayload,
       }])
       .select()
       .single()
@@ -336,6 +405,99 @@ function App() {
     toast.success(currentLanguage === 'en'
       ? 'Post removed from your calendar and sent to admin review.'
       : 'La publicación fue eliminada de tu calendario y enviada a revisión del administrador.')
+  }
+
+  const handleRequestScheduledPostEdit = async (postId: string, feedback: string) => {
+    if (!user) return false
+
+    const targetPost = scheduledPosts.find((post) => post.id === postId)
+    if (!targetPost) return false
+
+    const existingEditRequest = approvalPosts.find((post) => {
+      const { meta } = parseApprovalCaption(post.caption)
+      return meta.sourceScheduledPostId === targetPost.id && meta.changeType === 'revision' && post.status !== 'approved'
+    })
+
+    const previousAutoPostEnabled = targetPost.auto_post_enabled ?? true
+    const { error: pauseError } = await supabase
+      .from('scheduled_posts')
+      .update({ auto_post_enabled: false })
+      .eq('id', postId)
+      .eq('user_id', user.id)
+
+    if (pauseError) {
+      toast.error(currentLanguage === 'en'
+        ? 'Unable to pause this post for edits right now.'
+        : 'No se pudo pausar esta publicación para editarla en este momento.')
+      return false
+    }
+
+    const encodedCaption = encodeApprovalCaption(targetPost.caption, {
+      requestedBy: 'client',
+      requestedDate: targetPost.scheduled_at || targetPost.date,
+      autoPostEnabled: previousAutoPostEnabled,
+      postType: targetPost.post_type || 'photo',
+      sourceScheduledPostId: targetPost.id,
+      changeType: 'revision',
+      title: targetPost.caption.split('\n')[0]?.slice(0, 80) || 'Calendar Post',
+    })
+
+    const requestPayload = {
+      caption: encodedCaption,
+      image_url: targetPost.image_url || buildApprovalImagePlaceholder(targetPost.caption),
+      status: 'changes-requested' as const,
+      feedback,
+    }
+
+    const requestQuery = existingEditRequest
+      ? supabase
+        .from('approval_posts')
+        .update(requestPayload)
+        .eq('id', existingEditRequest.id)
+        .eq('user_id', user.id)
+      : supabase
+        .from('approval_posts')
+        .insert([{
+          user_id: user.id,
+          platform: targetPost.platform,
+          ...requestPayload,
+        }])
+
+    const { data: requestData, error: requestError } = await requestQuery
+      .select()
+      .single()
+
+    if (requestError || !requestData) {
+      await supabase
+        .from('scheduled_posts')
+        .update({ auto_post_enabled: previousAutoPostEnabled })
+        .eq('id', postId)
+        .eq('user_id', user.id)
+
+      toast.error(currentLanguage === 'en'
+        ? 'Unable to send your edit request right now.'
+        : 'No se pudo enviar tu solicitud de edición en este momento.')
+      return false
+    }
+
+    setScheduledPosts((currentPosts) =>
+      currentPosts.map((post) =>
+        post.id === postId
+          ? { ...post, auto_post_enabled: false }
+          : post
+      )
+    )
+
+    setApprovalPosts((currentPosts) => {
+      const otherPosts = currentPosts.filter((post) => post.id !== requestData.id)
+      return [requestData as ApprovalPost, ...otherPosts]
+    })
+
+    toast.success(currentLanguage === 'en'
+      ? 'Edit request sent. Auto-posting is paused until the update is reviewed.'
+      : 'Solicitud de edición enviada. La publicación automática quedó en pausa hasta que se revise la actualización.')
+
+    return true
   }
 
   const handleLogin = (loggedInUser: User) => {
@@ -546,6 +708,7 @@ function App() {
                   metrics={performanceMetrics}
                   onUpdatePost={handleUpdatePost}
                   onDeletePost={handleDeleteScheduledPost}
+                  onRequestEdit={handleRequestScheduledPostEdit}
                   language={currentLanguage}
                 />
               </TabsContent>

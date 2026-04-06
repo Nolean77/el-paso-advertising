@@ -178,8 +178,35 @@ function App() {
 
     void loadData()
 
+    const metricsChannel = supabase
+      .channel(`performance-metrics-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'performance_metrics',
+          filter: `user_id=eq.${user.id}`,
+        },
+        async () => {
+          const { data, error } = await supabase
+            .from('performance_metrics')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('date', { ascending: false })
+
+          if (!isMounted || error) {
+            return
+          }
+
+          setPerformanceMetrics((data as PerformanceMetric[]) ?? [])
+        }
+      )
+      .subscribe()
+
     return () => {
       isMounted = false
+      void supabase.removeChannel(metricsChannel)
     }
   }, [user])
 

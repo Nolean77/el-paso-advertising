@@ -83,9 +83,23 @@ export function findRelevantMetricForScheduledPost(post: ScheduledPost, metrics:
     return null
   }
 
-  const samePlatformMetrics = metrics.filter((metric) => metric.platform === post.platform)
+  const eligiblePlatforms = new Set<PerformanceMetric['platform']>([post.platform])
 
-  const exactMatches = samePlatformMetrics.filter((metric) =>
+  if (post.posted_to_facebook || post.facebook_post_id) {
+    eligiblePlatforms.add('facebook')
+  }
+
+  if (post.posted_to_instagram || post.instagram_post_id) {
+    eligiblePlatforms.add('instagram')
+  }
+
+  const samePlatformMetrics = metrics.filter((metric) => metric.platform === post.platform)
+  const crossPostedMetrics = metrics.filter((metric) =>
+    metric.platform !== post.platform && eligiblePlatforms.has(metric.platform)
+  )
+  const candidateMetrics = [...samePlatformMetrics, ...crossPostedMetrics]
+
+  const exactMatches = candidateMetrics.filter((metric) =>
     normalizeCalendarCaption(metric.caption) === postCaption
   )
 
@@ -102,7 +116,7 @@ export function findRelevantMetricForScheduledPost(post: ScheduledPost, metrics:
     return null
   }
 
-  const sameDayPartialMatch = samePlatformMetrics.find((metric) => {
+  const sameDayPartialMatch = candidateMetrics.find((metric) => {
     if (metric.date !== postDate) {
       return false
     }

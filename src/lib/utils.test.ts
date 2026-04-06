@@ -119,6 +119,36 @@ describe('approval caption helpers', () => {
     expect(findRelevantMetricForScheduledPost(post, [unrelatedMetric, matchingMetric])?.id).toBe('metric-match')
   })
 
+  it('matches pulled Facebook metrics for cross-posted portal content', () => {
+    const post: ScheduledPost = {
+      id: 'post-3',
+      user_id: 'user-1',
+      date: '2026-04-07',
+      platform: 'instagram',
+      caption: 'Behind the scenes at our spring launch',
+      image_url: 'https://example.com/post-3.jpg',
+      status: 'scheduled',
+      posted_to_facebook: true,
+      posted_to_instagram: true,
+      posted_at: '2026-04-07T18:00:00.000Z',
+      facebook_post_id: 'fb-post-456',
+      instagram_post_id: 'ig-post-456',
+    }
+
+    const pulledFacebookMetric: PerformanceMetric = {
+      id: 'metric-facebook-cross-post',
+      user_id: 'user-1',
+      caption: 'Behind the scenes at our spring launch',
+      date: '2026-04-07',
+      platform: 'facebook',
+      reach: 3200,
+      likes: 180,
+      engagement_rate: 5.6,
+    }
+
+    expect(findRelevantMetricForScheduledPost(post, [pulledFacebookMetric])?.id).toBe('metric-facebook-cross-post')
+  })
+
   it('builds a safe SVG placeholder', () => {
     const placeholder = buildApprovalImagePlaceholder('Spring <Sale> & More')
     const decodedPlaceholder = decodeURIComponent(placeholder)
